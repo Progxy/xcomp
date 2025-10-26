@@ -22,8 +22,6 @@
  * Resources: deflate <https://www.ietf.org/rfc/rfc1951.txt> *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#include "../common/bitstream.h"
-
 // -------------------
 //  Macros Definition
 // -------------------

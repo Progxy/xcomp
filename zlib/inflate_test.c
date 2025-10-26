@@ -21,6 +21,7 @@
 #define _XCOMP_PRINTING_UTILS_
 #define _XCOMP_UTILS_IMPLEMENTATION_
 #include "../common/utils.h"
+#define _XCOMP_BITSTREAM_
 #include "./xcomp_zlib.h"
 
 const unsigned char zlib_compressed_data[] = {

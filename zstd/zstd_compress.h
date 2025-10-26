@@ -24,7 +24,6 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #include "./xxhash64.h"
-#include "../common/bitstream.h"
 
 // TODO: Implement the compression
 

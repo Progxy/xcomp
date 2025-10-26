@@ -44,8 +44,10 @@
     #define DEBUG_LOG(...)
 #endif //_DEBUG
 
-#include "./str_error.h"
-#define PERROR_LOG(format, ...) printf(COLOR_STR("WARNING:" __FILE__ ":%u: ", BRIGHT_YELLOW) format ", because: " COLOR_STR("'%s'", BRIGHT_YELLOW) ".\n", __LINE__, ##__VA_ARGS__, str_error())
+#ifndef _XCOMP_NO_PERROR_
+	#include "./str_error.h"
+	#define PERROR_LOG(format, ...) printf(COLOR_STR("WARNING:" __FILE__ ":%u: ", BRIGHT_YELLOW) format ", because: " COLOR_STR("'%s'", BRIGHT_YELLOW) ".\n", __LINE__, ##__VA_ARGS__, str_error())
+#endif // _XCOMP_NO_PERROR_
 
 #endif //_XCOMP_PRINTING_UTILS_
 

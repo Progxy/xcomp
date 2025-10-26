@@ -24,7 +24,6 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #include "./xxhash64.h"
-#include "../common/bitstream.h"
 
 // TODO: Rewrite the comments for better orienting external supporters
 // TODO: Rewrite the warnings msgs to have a compact style

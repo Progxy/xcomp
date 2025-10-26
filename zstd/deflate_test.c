@@ -21,6 +21,7 @@
 #define _XCOMP_PRINTING_UTILS_
 #define _XCOMP_UTILS_IMPLEMENTATION_
 #include "./utils.h"
+#define _XCOMP_BITSTREAM_
 #include "./xcomp_zstd.h"
 
 static const char zstd_data[] = "This is a test string, DEFLATE.";

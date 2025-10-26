@@ -54,6 +54,10 @@ static const char* zlib_errors_str[] = {
 typedef enum PACKED_STRUCT BType { NO_COMPRESSION, COMPRESSED_FIXED_HF, COMPRESSED_DYNAMIC_HF, RESERVED } BType;
 static const char* btypes_str[] = { "NO_COMPRESSION", "COMPRESSED_FIXED_HF", "COMPRESSED_DYNAMIC_HF", "RESERVED" };
 
+#ifdef _XCOMP_BITSTREAM_
+#include "../common/bitstream.h"
+#endif //_XCOMP_BITSTREAM_
+
 #include "./zlib_compress.h"
 #include "./zlib_decompress.h"
 

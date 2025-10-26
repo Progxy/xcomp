@@ -80,6 +80,10 @@ typedef enum PACKED_STRUCT CompressionMode { PREDEFINED_MODE, RLE_MODE, FSE_COMP
 	static const char* compression_modes_str[]    = { "PREDEFINED_MODE", "RLE_MODE", "FSE_COMPRESSED_MODE", "REPEAT_MODE" };
 #endif //_DEBUG
 
+#ifdef _XCOMP_BITSTREAM_
+#include "../common/bitstream.h"
+#endif //_XCOMP_BITSTREAM_
+
 #include "./zstd_compress.h"
 #include "./zstd_decompress.h"
 

@@ -7,5 +7,6 @@ zlib/inflate_test
 zlib/zlib_tester
 
 build/xcomp.h
-build/libxcomp.*
+build/libxcomp.so
+build/libxcomp.a
 

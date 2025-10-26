@@ -22,8 +22,6 @@
  * Resources: deflate <https://www.ietf.org/rfc/rfc1951.txt> *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#include "../common/bitstream.h"
-
 // TODO: Possibly create hf_tree struct to contain all the length - size couples, generally reduce the size of functions' declaration
 // TODO: Write better comments and error messages
 
