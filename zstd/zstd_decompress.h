@@ -15,8 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _ZSTD_H_
-#define _ZSTD_H_
+#ifndef _ZSTD_DECOMPRESS_H_
+#define _ZSTD_DECOMPRESS_H_
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * Resources: zstd <http://github.com/facebook/zstd> (original repo) *
@@ -24,33 +24,25 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #include "./xxhash64.h"
-#include "./bitstream.h"
+#include "../common/bitstream.h"
 
-// -----------------
-//  Constant Values 
-// -----------------
-#define ZSTD_SKIPPABLE_FRAME_MAGIC_MIN 0x184D2A50
-#define ZSTD_SKIPPABLE_FRAME_MAGIC_MAX 0x184D2A5F
-#define ZSTD_FRAME_MAGIC               0xFD2FB528
-#define FSE_TABLELOG_ABSOLUTE_MAX      15
-#define FSE_MAX_SYMBOL_VALUE           255
-#define MAXIMUM_CODE_LENGTH            11
-#define NOT_USING_RLE                  -1
-#define MAX_LL_CODE                    35
-#define MAX_ML_CODE                    52
-#define MAX_OL_CODE   	               31
-#define U32_BITS                       32
-#define MAX_BLOCK_SIZE                (128 * 1024)
+// TODO: Rewrite the comments for better orienting external supporters
+// TODO: Rewrite the warnings msgs to have a compact style
+// TODO: Note that as most of CPUs use little-endian, and that the ZSTD format follows that, it could be unjustified the use of LE_CONVERT to convert to LE from BE, in rare cases.
 
 /* -------------------------------------------------------------------------------------------------------- */
 // -------------------
 //  Macros Definition
 // -------------------
-#define GET_LITERALS_FIELDS_BIT_SIZE(size_format) ((size_format == 0 || size_format == 1) ? 10 : (size_format == 2 ? 14 : 18))
-#define GET_FRAME_CONTENT_SIZE(size_flag, single_seg_flag) (size_flag == 0 ? single_seg_flag : 1 << size_flag) 
-#define UPDATE_FSE_STATE(state, fse_table, compressed_bit_stream) state = (fse_table)[state].baseline + reversed_bitstream_read_bits(&compressed_bit_stream, (fse_table)[state].nb_bits)
-#define UPDATE_HF_STATE(state, hf_literals, hf_table_size, reversed_bit_stream) state = ((state << (hf_literals)[state].nb_bits) & (hf_table_size - 1)) | reversed_bitstream_read_bits(reversed_bit_stream, (hf_literals)[state].nb_bits)
+#define GET_LITERALS_FIELDS_BIT_SIZE(size_format)                ((size_format == 0 || size_format == 1) ? 10 : (size_format == 2 ? 14 : 18))
+#define GET_FRAME_CONTENT_SIZE(size_flag, single_seg_flag)       (size_flag == 0 ? single_seg_flag : 1 << size_flag) 
 #define INFER_LAST_STREAM_SIZE(total_streams_size, streams_size) (total_streams_size - 6 - streams_size[0] - streams_size[1] - streams_size[2])
+
+#define UPDATE_FSE_STATE(state, fse_table, compressed_bit_stream) \
+	state = (fse_table)[state].baseline + reversed_bitstream_read_bits(&compressed_bit_stream, (fse_table)[state].nb_bits)
+#define UPDATE_HF_STATE(state, hf_literals, hf_table_size, reversed_bit_stream) \
+	state = ((state << (hf_literals)[state].nb_bits) & (hf_table_size - 1)) | reversed_bitstream_read_bits(reversed_bit_stream, (hf_literals)[state].nb_bits)
+
 #define SKIP_PADDING(err, reversed_bit_stream) 																						\
 	do { 																															\
 		unsigned char bit_val = reversed_bitstream_read_next_bit(reversed_bit_stream); 												\
@@ -61,73 +53,53 @@
 		} else if (bit_val) break; 																									\
 	} while(TRUE)
 
-/* -------------------------------------------------------------------------------------------------------- */
-// -------
-//  Enums
-// -------
-typedef enum PACKED_STRUCT ZstdError {
-    ZSTD_NO_ERROR, 
-    ZSTD_IO_ERROR,
-    ZSTD_RESERVED, 
-    ZSTD_TABLE_LOG_TOO_LARGE, 
-    ZSTD_CORRUPTED_DATA, 
-    ZSTD_MAX_SYMBOL_VALUE_TOO_SMALL, 
-    ZSTD_TOO_MANY_LITERALS, 
-    ZSTD_CHECKSUM_FAIL,
-    ZSTD_INVALID_MAGIC,
-    ZSTD_RESERVED_FIELD,
-    ZSTD_UNSUPPORTED_FEATURE,
-	ZSTD_DECOMPRESSED_SIZE_MISMATCH,
-    ZSTD_TODO
-} ZstdError;
-
-static const char* zstd_errors_str[] = {
-    "ZSTD_NO_ERROR",
-    "ZSTD_IO_ERROR",
-    "ZSTD_RESERVED", 
-    "ZSTD_TABLE_LOG_TOO_LARGE",
-    "ZSTD_CORRUPTED_DATA",
-    "ZSTD_MAX_SYMBOL_VALUE_TOO_SMALL",
-    "ZSTD_TOO_MANY_LITERALS",
-    "ZSTD_CHECKSUM_FAIL",
-    "ZSTD_INVALID_MAGIC",
-    "ZSTD_RESERVED_FIELD", 
-    "ZSTD_UNSUPPORTED_FEATURE", 
-	"ZSTD_DECOMPRESSED_SIZE_MISMATCH",
-    "ZSTD_TODO"
-};
-
-typedef enum PACKED_STRUCT LiteralsBlockType { RAW_LITERALS_BLOCK, RLE_LITERALS_BLOCK, COMPRESSED_LITERALS_BLOCK, TREELESS_LITERALS_BLOCK } LiteralsBlockType;
-typedef enum PACKED_STRUCT BlockType { RAW_BLOCK, RLE_BLOCK, COMPRESSED_BLOCK, RESERVED_TYPE } BlockType;
-typedef enum PACKED_STRUCT CompressionMode { PREDEFINED_MODE, RLE_MODE, FSE_COMPRESSED_MODE, REPEAT_MODE } CompressionMode;
-
-#ifdef _DEBUG
-	static const char* literals_blocks_type_str[] = { "RAW_LITERALS_BLOCK", "RLE_LITERALS_BLOCK", "COMPRESSED_LITERALS_BLOCK", "TREELESS_LITERALS_BLOCK" };
-	static const char* block_types_str[] = { "RAW_BLOCK", "RLE_BLOCK", "COMPRESSED_BLOCK", "RESERVED_TYPE" };
-	static const char* compression_modes_str[] = { "PREDEFINED_MODE", "RLE_MODE", "FSE_COMPRESSED_MODE", "REPEAT_MODE" };
-#endif //_DEBUG
 
 /* -------------------------------------------------------------------------------------------------------- */
 // -------------------------------
 //  Predefined Distributions Data
 // -------------------------------
-#define LL_MAX_LOG        9
-#define ML_MAX_LOG        9
-#define OL_MAX_LOG        8
-#define PRED_LL_TABLE_LOG 6
-#define PRED_ML_TABLE_LOG 6
-#define PRED_OL_TABLE_LOG 5
+typedef enum DistributionData {
+	LL_MAX_LOG        = 9,
+	ML_MAX_LOG        = 9,
+	OL_MAX_LOG        = 8,
+	PRED_LL_TABLE_LOG = 6,
+	PRED_ML_TABLE_LOG = 6,
+	PRED_OL_TABLE_LOG = 5
+} DistributionData;
 
-static const short int ll_pred_frequencies[] = { 4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1 };
-static const short int ml_pred_frequencies[] = { 1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1 };
-static const short int ol_pred_frequencies[] = { 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1 };
+static const short int ll_pred_frequencies[] = { 
+	4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+   	1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+	3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1 
+};
+
+static const short int ml_pred_frequencies[] = {
+	1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1,
+	-1, -1, -1, -1 
+};
+
+static const short int ol_pred_frequencies[] = { 
+	1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 
+	1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1 
+};
 
 static const unsigned int ll_codes[36][2] = {
-	{0, 0}, {1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}, {6, 0}, {7, 0}, {8, 0}, {9, 0}, {10, 0}, {11, 0}, {12, 0}, {13, 0}, {14, 0}, {15, 0}, {16, 1}, {18, 1}, {20, 1}, {22, 1}, {24, 2}, {28, 2}, {32, 3}, {40, 3}, {48, 4}, {64, 6}, {128, 7}, {256, 8}, {512, 9}, {1024, 10}, {2048, 11}, {4096, 12}, {8192, 13}, {16384, 14}, {32768, 15}, {65536, 16}
+	{0, 0}, {1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}, {6, 0}, {7, 0}, {8, 0}, {9, 0},
+	{10, 0}, {11, 0}, {12, 0}, {13, 0}, {14, 0}, {15, 0}, {16, 1}, {18, 1},
+	{20, 1}, {22, 1}, {24, 2}, {28, 2}, {32, 3}, {40, 3}, {48, 4}, {64, 6},
+	{128, 7}, {256, 8}, {512, 9}, {1024, 10}, {2048, 11}, {4096, 12}, {8192, 13},
+	{16384, 14}, {32768, 15}, {65536, 16}
 };
 
 static const unsigned int ml_codes[53][2] = {
-	{3, 0}, {4, 0}, {5, 0}, {6, 0}, {7, 0}, {8, 0}, {9, 0}, {10, 0}, {11, 0}, {12, 0}, {13, 0}, {14, 0}, {15, 0}, {16, 0}, {17, 0}, {18, 0}, {19, 0}, {20, 0}, {21, 0}, {22, 0}, {23, 0}, {24, 0}, {25, 0}, {26, 0}, {27, 0}, {28, 0}, {29, 0}, {30, 0}, {31, 0}, {32, 0}, {33, 0}, {34, 0}, {35, 1}, {37, 1}, {39, 1}, {41, 1}, {43, 2}, {47, 2}, {51, 3}, {59, 3}, {67, 4}, {83, 4}, {99, 5}, {131, 7}, {259, 8}, {515, 9}, {1027, 10}, {2051, 11}, {4099, 12}, {8195, 13}, {16387, 14}, {32771, 15}, {65539, 16}
+	{3, 0}, {4, 0}, {5, 0}, {6, 0}, {7, 0}, {8, 0}, {9, 0}, {10, 0}, {11, 0},
+	{12, 0}, {13, 0}, {14, 0}, {15, 0}, {16, 0}, {17, 0}, {18, 0}, {19, 0},
+	{20, 0}, {21, 0}, {22, 0}, {23, 0}, {24, 0}, {25, 0}, {26, 0}, {27, 0},
+	{28, 0}, {29, 0}, {30, 0}, {31, 0}, {32, 0}, {33, 0}, {34, 0}, {35, 1},
+	{37, 1}, {39, 1}, {41, 1}, {43, 2}, {47, 2}, {51, 3}, {59, 3}, {67, 4},
+	{83, 4}, {99, 5}, {131, 7}, {259, 8}, {515, 9}, {1027, 10}, {2051, 11},
+	{4099, 12}, {8195, 13}, {16387, 14}, {32771, 15}, {65539, 16}
 };
 
 /* -------------------------------------------------------------------------------------------------------- */
@@ -258,7 +230,7 @@ static unsigned char highest_bit(unsigned long long int val) {
 
 static void print_fhd(FrameHeaderDescriptor fhd) {
 	(void) fhd;
-	DEBUG_LOG("FrameHeaderDescriptor: (0x%X)\n", *QCOW_CAST_PTR(&fhd, unsigned char));
+	DEBUG_LOG("FrameHeaderDescriptor: (0x%X)\n", *XCOMP_CAST_PTR(&fhd, unsigned char));
     DEBUG_LOG(" - frame_content_size_flag: %u\n", fhd.frame_content_size_flag);
     DEBUG_LOG(" - single_segment_flag: %u\n", fhd.single_segment_flag);
     DEBUG_LOG(" - unused: %u\n", fhd.unused);
@@ -269,20 +241,20 @@ static void print_fhd(FrameHeaderDescriptor fhd) {
 }
 
 static void deallocate_workspace(Workspace* workspace) {
-	QCOW_SAFE_FREE(workspace -> frame_buffer);
-	QCOW_SAFE_FREE(workspace -> sequence_section.ll_fse_table);
-	QCOW_SAFE_FREE(workspace -> sequence_section.ml_fse_table);
-	QCOW_SAFE_FREE(workspace -> sequence_section.ol_fse_table);
-	QCOW_SAFE_FREE(workspace -> hf_literals);
-	QCOW_SAFE_FREE(workspace -> literals); 
-	QCOW_SAFE_FREE(workspace -> sequences);
+	XCOMP_SAFE_FREE(workspace -> frame_buffer);
+	XCOMP_SAFE_FREE(workspace -> sequence_section.ll_fse_table);
+	XCOMP_SAFE_FREE(workspace -> sequence_section.ml_fse_table);
+	XCOMP_SAFE_FREE(workspace -> sequence_section.ol_fse_table);
+	XCOMP_SAFE_FREE(workspace -> hf_literals);
+	XCOMP_SAFE_FREE(workspace -> literals); 
+	XCOMP_SAFE_FREE(workspace -> sequences);
 	return;
 }
 
 static void deallocate_sequence_section(SequenceSection* sequence_section) {
-	if (sequence_section -> ll_fse_table) QCOW_SAFE_FREE(sequence_section -> ll_fse_table);
-	if (sequence_section -> ml_fse_table) QCOW_SAFE_FREE(sequence_section -> ml_fse_table);
-	if (sequence_section -> ol_fse_table) QCOW_SAFE_FREE(sequence_section -> ol_fse_table);
+	if (sequence_section -> ll_fse_table) XCOMP_SAFE_FREE(sequence_section -> ll_fse_table);
+	if (sequence_section -> ml_fse_table) XCOMP_SAFE_FREE(sequence_section -> ml_fse_table);
+	if (sequence_section -> ol_fse_table) XCOMP_SAFE_FREE(sequence_section -> ol_fse_table);
 	return;
 }
 
@@ -323,7 +295,7 @@ static int read_probabilities(BitStream* compressed_bit_stream, unsigned char ta
 	if (table_log > FSE_TABLELOG_ABSOLUTE_MAX) return -ZSTD_TABLE_LOG_TOO_LARGE;
 	int remaining = (1 << table_log) + 1;
 
-	*frequencies = (short int*) qcow_realloc(*frequencies, (FSE_MAX_SYMBOL_VALUE + 1U) * sizeof(short int));
+	*frequencies = (short int*) xcomp_realloc(*frequencies, (FSE_MAX_SYMBOL_VALUE + 1U) * sizeof(short int));
 	if (*frequencies == NULL) {
 		WARNING_LOG("Failed to allocate frequencies.\n");
 		return -ZSTD_IO_ERROR;
@@ -353,7 +325,7 @@ static int read_probabilities(BitStream* compressed_bit_stream, unsigned char ta
 
 		value--; // Prediction = value - 1
 		if (value < -1 || remaining <= 1) {
-			QCOW_SAFE_FREE(frequencies);
+			XCOMP_SAFE_FREE(frequencies);
 			WARNING_LOG("Predictions cannot be less than 1: %d\n", value);
 			return -ZSTD_CORRUPTED_DATA;
 		}
@@ -368,16 +340,16 @@ static int read_probabilities(BitStream* compressed_bit_stream, unsigned char ta
 	}
 
 	if (*probabilities_cnt > max_symbol + 1) {
-		QCOW_SAFE_FREE(*frequencies); 
+		XCOMP_SAFE_FREE(*frequencies); 
 		WARNING_LOG("Probabilities_cnt %u > %u max_symbol_value.\n", *probabilities_cnt, max_symbol + 1);
 		return -ZSTD_MAX_SYMBOL_VALUE_TOO_SMALL;
 	} else if (freq_cum_sum != (1 << table_log)) {
-		QCOW_SAFE_FREE(*frequencies); 
+		XCOMP_SAFE_FREE(*frequencies); 
 		WARNING_LOG("Freq_cum_sum %u != %u expected frequencies count.\n", freq_cum_sum, (1 << table_log));
 		return -ZSTD_CORRUPTED_DATA;
 	}
 
-	*frequencies = (short int*) qcow_realloc(*frequencies, *probabilities_cnt * sizeof(short int));
+	*frequencies = (short int*) xcomp_realloc(*frequencies, *probabilities_cnt * sizeof(short int));
 	if (*frequencies == NULL) {
 		WARNING_LOG("Failed to allocate frequencies.\n");
 		return -ZSTD_IO_ERROR;
@@ -393,7 +365,7 @@ static int fse_build_table(unsigned char table_log, short int* frequencies, unsi
 
 	// Build the decoding table from those probabilites
 	unsigned short int table_size = 1 << table_log; 
-	*fse_table = (FSETableEntry*) qcow_realloc(*fse_table, table_size * sizeof(FSETableEntry));
+	*fse_table = (FSETableEntry*) xcomp_realloc(*fse_table, table_size * sizeof(FSETableEntry));
 	if (*fse_table == NULL) {
 		WARNING_LOG("Failed to allocate the fse table.\n");
 		return -ZSTD_IO_ERROR;
@@ -421,14 +393,14 @@ static int fse_build_table(unsigned char table_log, short int* frequencies, unsi
 	}
 	
 	if (tab_pos != 0) {
-		QCOW_SAFE_FREE(*fse_table);
+		XCOMP_SAFE_FREE(*fse_table);
 		WARNING_LOG("Tab pos didn't go back to 0: %u.\n", tab_pos);
 		return -ZSTD_CORRUPTED_DATA;
 	}
 	
-	unsigned int* symbol_counter = (unsigned int*) qcow_calloc(probabilities_cnt, sizeof(unsigned int));
+	unsigned int* symbol_counter = (unsigned int*) xcomp_calloc(probabilities_cnt, sizeof(unsigned int));
 	if (symbol_counter == NULL) {
-		QCOW_SAFE_FREE(*fse_table);
+		XCOMP_SAFE_FREE(*fse_table);
 		WARNING_LOG("Failed to allocate symbol counter buffer.\n");
 		return -ZSTD_IO_ERROR;
 	}
@@ -441,7 +413,7 @@ static int fse_build_table(unsigned char table_log, short int* frequencies, unsi
 		calc_baseline_and_numbits(table_size, prob, symbol_count, &((*fse_table)[i].baseline), &((*fse_table)[i].nb_bits));
 
 		if ((*fse_table)[i].nb_bits > table_log) {
-			QCOW_MULTI_FREE(*fse_table, symbol_counter);
+			XCOMP_MULTI_FREE(*fse_table, symbol_counter);
 			WARNING_LOG("An error occurred while building the fse table.\n");
 			return -ZSTD_CORRUPTED_DATA;
 		}
@@ -449,7 +421,7 @@ static int fse_build_table(unsigned char table_log, short int* frequencies, unsi
 		symbol_counter[symbol]++;
 	}
 
-	QCOW_SAFE_FREE(symbol_counter);
+	XCOMP_SAFE_FREE(symbol_counter);
 		
 	return ZSTD_NO_ERROR;
 }
@@ -477,18 +449,18 @@ static int read_weights(BitStream* compressed_bit_stream, unsigned char* table_l
 
 		FSETableEntry* fse_table = NULL;
 		if ((err = fse_build_table(*table_log, frequencies, probabilities_cnt, &fse_table))) {
-			QCOW_SAFE_FREE(frequencies);
+			XCOMP_SAFE_FREE(frequencies);
 			WARNING_LOG("An error occurred while building the FSE Table.\n");
 			return err;
 		}
 		
-		QCOW_SAFE_FREE(frequencies);
+		XCOMP_SAFE_FREE(frequencies);
 
 		// Decode the fse encoded weights
 		BitStream weights_compressed_bit_stream = CREATE_REVERSED_BIT_STREAM(literals_compressed_bit_stream.stream + literals_compressed_bit_stream.byte_pos, header_byte - literals_compressed_bit_stream.byte_pos, -(*table_log));
 		SKIP_PADDING(err, &weights_compressed_bit_stream);	
 		if (err < 0) {
-			QCOW_SAFE_FREE(fse_table);
+			XCOMP_SAFE_FREE(fse_table);
 			return err;
 		}
 
@@ -496,10 +468,10 @@ static int read_weights(BitStream* compressed_bit_stream, unsigned char* table_l
 		unsigned short int odd_state = reversed_bitstream_read_bits(&weights_compressed_bit_stream, *table_log);
 		
 		while (TRUE) {
-			*weights = (unsigned char*) qcow_realloc(*weights, sizeof(unsigned char) * (*weights_cnt + 2));
+			*weights = (unsigned char*) xcomp_realloc(*weights, sizeof(unsigned char) * (*weights_cnt + 2));
 			if (*weights == NULL) {
-				QCOW_SAFE_FREE(fse_table);
-				WARNING_LOG("Failed to qcow_reallocate the weights.\n");
+				XCOMP_SAFE_FREE(fse_table);
+				WARNING_LOG("Failed to xcomp_reallocate the weights.\n");
 				return -ZSTD_IO_ERROR;
 			}
 
@@ -507,7 +479,7 @@ static int read_weights(BitStream* compressed_bit_stream, unsigned char* table_l
 			UPDATE_FSE_STATE(even_state, fse_table, weights_compressed_bit_stream);
 			(*weights_cnt)++;
 			if ((*weights)[*weights_cnt - 1] > MAXIMUM_CODE_LENGTH) {
-				QCOW_MULTI_FREE(fse_table, *weights);
+				XCOMP_MULTI_FREE(fse_table, *weights);
 				WARNING_LOG("An error occurred while decoding the encoded weights.\n");
 				return -ZSTD_CORRUPTED_DATA;
 			}
@@ -515,7 +487,7 @@ static int read_weights(BitStream* compressed_bit_stream, unsigned char* table_l
 			if (weights_compressed_bit_stream.bit_pos < 0) {
 				(*weights)[(*weights_cnt)++] = fse_table[odd_state].symbol;
 				if ((*weights)[*weights_cnt - 1] > MAXIMUM_CODE_LENGTH) {
-					QCOW_MULTI_FREE(fse_table, *weights);
+					XCOMP_MULTI_FREE(fse_table, *weights);
 					WARNING_LOG("An error occurred while decoding the encoded weights.\n");
 					return -ZSTD_CORRUPTED_DATA;
 				}
@@ -525,22 +497,22 @@ static int read_weights(BitStream* compressed_bit_stream, unsigned char* table_l
 			(*weights)[(*weights_cnt)++] = fse_table[odd_state].symbol;
 			UPDATE_FSE_STATE(odd_state, fse_table, weights_compressed_bit_stream);
 			if ((*weights)[*weights_cnt - 1] > MAXIMUM_CODE_LENGTH) {
-				QCOW_MULTI_FREE(fse_table, *weights);
+				XCOMP_MULTI_FREE(fse_table, *weights);
 				WARNING_LOG("An error occurred while decoding the encoded weights.\n");
 				return -ZSTD_CORRUPTED_DATA;
 			}
 			
 			if (weights_compressed_bit_stream.bit_pos < 0) {
-				*weights = (unsigned char*) qcow_realloc(*weights, sizeof(unsigned char) * (++(*weights_cnt)));
+				*weights = (unsigned char*) xcomp_realloc(*weights, sizeof(unsigned char) * (++(*weights_cnt)));
 				if (*weights == NULL) {
-					QCOW_SAFE_FREE(fse_table);
-					WARNING_LOG("Failed to qcow_reallocate the weights.\n");
+					XCOMP_SAFE_FREE(fse_table);
+					WARNING_LOG("Failed to xcomp_reallocate the weights.\n");
 					return -ZSTD_IO_ERROR;
 				}
 
 				(*weights)[*weights_cnt - 1] = fse_table[even_state].symbol;
 				if ((*weights)[*weights_cnt - 1] > MAXIMUM_CODE_LENGTH) {
-					QCOW_MULTI_FREE(fse_table, *weights);
+					XCOMP_MULTI_FREE(fse_table, *weights);
 					WARNING_LOG("An error occurred while decoding the encoded weights.\n");
 					return -ZSTD_CORRUPTED_DATA;
 				}
@@ -548,17 +520,17 @@ static int read_weights(BitStream* compressed_bit_stream, unsigned char* table_l
 			}
 		}
 			
-		QCOW_SAFE_FREE(fse_table);
+		XCOMP_SAFE_FREE(fse_table);
 		
 		if (*weights_cnt > FSE_MAX_SYMBOL_VALUE) {
-			QCOW_SAFE_FREE(*weights);
+			XCOMP_SAFE_FREE(*weights);
 			return -ZSTD_TOO_MANY_LITERALS;
 		}
 	} else {
 		*weights_cnt = header_byte - 127;
-		*weights = (unsigned char*) qcow_realloc(*weights, sizeof(unsigned char) * (*weights_cnt));
+		*weights = (unsigned char*) xcomp_realloc(*weights, sizeof(unsigned char) * (*weights_cnt));
 		if (*weights == NULL) {
-			WARNING_LOG("Failed to qcow_reallocate the weights.\n");
+			WARNING_LOG("Failed to xcomp_reallocate the weights.\n");
 			return -ZSTD_IO_ERROR;
 		}
 
@@ -599,9 +571,9 @@ static int build_huff_table(BitStream* compressed_bit_stream, Workspace* workspa
 	// NOTE for Adventurers: Don't be fooled by those monkeys at Meta that specify "Huffman Tree" in their RFC 8878 (sponsored as official reference of ZSTD), and instead use a state-based approach
 	// Furthermore, thanks to "zstd-rs" (at "https://github.com/KillingSpark/zstd-rs") for showing what they were actually doing inside their jungle mess of code.
 	workspace -> max_nb_bits = highest_bit(exp_weights_cnt);
-	weights = qcow_realloc(weights, sizeof(unsigned char) * (++weights_cnt));
+	weights = xcomp_realloc(weights, sizeof(unsigned char) * (++weights_cnt));
 	if (weights == NULL) {
-		WARNING_LOG("Failed to qcow_reallocate the weights.\n");
+		WARNING_LOG("Failed to xcomp_reallocate the weights.\n");
 		return -ZSTD_IO_ERROR;
 	}
 	
@@ -609,10 +581,10 @@ static int build_huff_table(BitStream* compressed_bit_stream, Workspace* workspa
 	
 	unsigned short int hf_literals_size = 1 << workspace -> max_nb_bits;
 	unsigned short int hf_literals_cnt = 0;
-	workspace -> hf_literals = (ZSTDHfEntry*) qcow_realloc(workspace -> hf_literals, hf_literals_size * sizeof(ZSTDHfEntry));
+	workspace -> hf_literals = (ZSTDHfEntry*) xcomp_realloc(workspace -> hf_literals, hf_literals_size * sizeof(ZSTDHfEntry));
 	if (workspace -> hf_literals == NULL) {
-		QCOW_SAFE_FREE(weights);
-		WARNING_LOG("Failed to qcow_reallocate the huff table for literals.\n");
+		XCOMP_SAFE_FREE(weights);
+		WARNING_LOG("Failed to xcomp_reallocate the huff table for literals.\n");
 		return -ZSTD_IO_ERROR;
 	}
 	
@@ -629,10 +601,10 @@ static int build_huff_table(BitStream* compressed_bit_stream, Workspace* workspa
 		hf_literals_cnt += symbols_cnt;
 	}
 	
-	QCOW_SAFE_FREE(weights);
+	XCOMP_SAFE_FREE(weights);
 	
 	if (hf_literals_size != hf_literals_cnt) {
-		QCOW_SAFE_FREE(workspace -> hf_literals);
+		XCOMP_SAFE_FREE(workspace -> hf_literals);
 		WARNING_LOG("Mismatch in the hf literals size: %u != %u (expected size).\n", hf_literals_size, hf_literals_cnt);
 		return -ZSTD_CORRUPTED_DATA;
 	}
@@ -681,7 +653,7 @@ static int decode_literals(BitStream* compressed_bit_stream, Workspace* workspac
 		unsigned char* literals_stream = SAFE_BYTE_READ(compressed_bit_stream, sizeof(unsigned char), total_streams_size, literals_stream, workspace -> hf_literals);
 		BitStream literals_bit_stream = CREATE_REVERSED_BIT_STREAM(literals_stream, total_streams_size, -(workspace -> max_nb_bits));
 		if (((err = huff_decode_stream(&literals_bit_stream, hf_literals_size, lsh.regenerated_size, workspace)) < 0) || (workspace -> literals_cnt != lsh.regenerated_size)) {
-			QCOW_SAFE_FREE(workspace -> hf_literals);
+			XCOMP_SAFE_FREE(workspace -> hf_literals);
 			WARNING_LOG("An error occurred while decoding the literals huff encoded stream.\n");
 			return err;
 		}
@@ -695,18 +667,18 @@ static int decode_literals(BitStream* compressed_bit_stream, Workspace* workspac
 			unsigned char* literals_sub_stream = SAFE_BYTE_READ(compressed_bit_stream, sizeof(unsigned char), streams_size[i], literals_sub_stream, workspace -> hf_literals);
 			BitStream literals_sub_bit_stream = CREATE_REVERSED_BIT_STREAM(literals_sub_stream, streams_size[i], -(workspace -> max_nb_bits));
 			if (compressed_bit_stream -> error) {
-				QCOW_SAFE_FREE(workspace -> hf_literals);
+				XCOMP_SAFE_FREE(workspace -> hf_literals);
 				WARNING_LOG("Not enough data for the streams.\n");
 				return -ZSTD_CORRUPTED_DATA;
 			} else if (((err = huff_decode_stream(&literals_sub_bit_stream, hf_literals_size, lsh.regenerated_size, workspace)) < 0) || (literals_sub_bit_stream.bit_pos != -(workspace -> max_nb_bits))) {
-				QCOW_SAFE_FREE(workspace -> hf_literals);
+				XCOMP_SAFE_FREE(workspace -> hf_literals);
 				WARNING_LOG("An error occurred while decoding the literals huff encoded in the substream '%u'.\n", i + 1);
 				return -ZSTD_CORRUPTED_DATA;
 			}	
 		}
 		
 		if (workspace -> literals_cnt != lsh.regenerated_size) {
-			QCOW_SAFE_FREE(workspace -> hf_literals);
+			XCOMP_SAFE_FREE(workspace -> hf_literals);
 			WARNING_LOG("Size mismatch between literals_cnt and the expected regenerated size: %u != %u .\n", workspace -> literals_cnt, lsh.regenerated_size);
 			return -ZSTD_CORRUPTED_DATA;
 		}
@@ -729,8 +701,8 @@ static int parse_literals_section(BitStream* compressed_bit_stream, Workspace* w
 		DEBUG_LOG("regenerated_size: %u\n", lsh.regenerated_size);
 		
 		workspace -> literals_cnt = 0;
-		QCOW_SAFE_FREE(workspace -> literals);
-		workspace -> literals = (unsigned char*) qcow_calloc(lsh.regenerated_size, sizeof(unsigned char));
+		XCOMP_SAFE_FREE(workspace -> literals);
+		workspace -> literals = (unsigned char*) xcomp_calloc(lsh.regenerated_size, sizeof(unsigned char));
 		if (workspace -> literals == NULL) {
 			WARNING_LOG("Failed to allocate literals buffer.\n");
 			return -ZSTD_IO_ERROR;
@@ -748,9 +720,9 @@ static int parse_literals_section(BitStream* compressed_bit_stream, Workspace* w
 		lsh.compressed_size = bitstream_read_bits(compressed_bit_stream, GET_LITERALS_FIELDS_BIT_SIZE(size_format));
 		lsh.streams_cnt = size_format == 0 ? 1 : 4;
 		
-		QCOW_SAFE_FREE(workspace -> literals);
+		XCOMP_SAFE_FREE(workspace -> literals);
 		workspace -> literals_cnt = 0;
-		workspace -> literals = (unsigned char*) qcow_calloc(lsh.regenerated_size, sizeof(unsigned char));
+		workspace -> literals = (unsigned char*) xcomp_calloc(lsh.regenerated_size, sizeof(unsigned char));
 		if (workspace -> literals == NULL) {
 			WARNING_LOG("Failed to allocate literals buffer.\n");
 			return -ZSTD_IO_ERROR;
@@ -768,53 +740,53 @@ static int parse_literals_section(BitStream* compressed_bit_stream, Workspace* w
 // ---------------------------------------
 //  Sequence Parsing and Decoding Section
 // ---------------------------------------
-#define init_length_type(err, compressed_bit_stream, type_len_mode, type_table_log, pred_frequencies, pred_table_log, type_max_log, type_max_symbol, type_fse_table, type_rle)	\
-	do { 																																        								\
-		switch (type_len_mode) { 																									            								\
-			case PREDEFINED_MODE: { 																										  									\
-				if (type_fse_table != NULL) QCOW_SAFE_FREE(type_fse_table); 																											\
-				if ((err = fse_build_table(pred_table_log, (short int*)pred_frequencies, QCOW_ARR_SIZE(pred_frequencies), &(type_fse_table))) < 0) {									\
-					WARNING_LOG("An error occurred while building the table for predefined.\n"); 																				\
-					return err; 																											    								\
-				} 																																								\
-				type_table_log = pred_table_log; 																																\
-				type_rle = NOT_USING_RLE;	 																																	\
-				break; 																																							\
-			}  																																									\
-			case FSE_COMPRESSED_MODE: { 																																		\
-				if (type_fse_table != NULL) QCOW_SAFE_FREE(type_fse_table); 																											\
-				type_table_log = bitstream_read_bits(compressed_bit_stream, 4) + 5;				 																				\
-				if (type_table_log > type_max_log) { 																															\
-					WARNING_LOG("Table log exceeds the maximum value of %u: %u.\n", type_max_log, type_table_log); 																\
-					return -ZSTD_CORRUPTED_DATA; 																																\
-				}		 																																						\
-				short int* frequencies = NULL; 																																	\
-				unsigned short int probabilities_cnt = 0; 																														\
-				if ((err = read_probabilities(compressed_bit_stream, type_table_log, type_max_symbol, &frequencies, &probabilities_cnt)) < 0) { 								\
-					WARNING_LOG("An error occurred while reading the probabilities for predefined.\n"); 																		\
-					return err; 																																				\
-				} 																																								\
-				if ((err = fse_build_table(type_table_log, frequencies, probabilities_cnt, &(type_fse_table))) < 0) { 															\
-					QCOW_SAFE_FREE(frequencies);																																		\
-					WARNING_LOG("An error occurred while building the table for predefined.\n"); 																				\
-					return err; 																																				\
-				} 																																								\
-				QCOW_SAFE_FREE(frequencies);  																																		\
-				type_rle = NOT_USING_RLE;	 																																	\
-				break; 																																							\
-			} 																																									\
-			case RLE_MODE: { 																																					\
-				type_rle = SAFE_BYTE_READ_WITH_CAST(compressed_bit_stream, sizeof(unsigned char), 1, unsigned char, type_rle, 0); 												\
-				break; 																																							\
-			} 																																									\
-			case REPEAT_MODE: { 																																				\
-				if (type_fse_table == NULL) {																																	\
-					WARNING_LOG("Uninitialized " #type_fse_table " either due to a previous IO error, or the stream is actually corrupted.\n"); 								\
-					return -ZSTD_CORRUPTED_DATA;																																\
-				}																																								\
-				break; 																																							\
-			} 																																									\
-		} 																																										\
+#define init_length_type(err, compressed_bit_stream, type_len_mode, type_table_log, pred_frequencies, pred_table_log, type_max_log, type_max_symbol, type_fse_table, type_rle) \
+	do {                                                                                                                                                                       \
+		switch (type_len_mode) {                                                                                                                                               \
+			case PREDEFINED_MODE: {                                                                                                                                            \
+				if (type_fse_table != NULL) XCOMP_SAFE_FREE(type_fse_table);                                                                                                   \
+				if ((err = fse_build_table(pred_table_log, (short int*)pred_frequencies, XCOMP_ARR_SIZE(pred_frequencies), &(type_fse_table))) < 0) {                          \
+					WARNING_LOG("An error occurred while building the table for predefined.\n"); 	   																		   \
+					return err;                                                                                                                                                \
+				}                                                                                                                                                              \
+				type_table_log = pred_table_log;                                                                                                                               \
+				type_rle = NOT_USING_RLE;                                                                                                                                      \
+				break;                                                                                                                                                         \
+			}                                                                                                                                                                  \
+			case FSE_COMPRESSED_MODE: {                                                                                                                                        \
+				if (type_fse_table != NULL) XCOMP_SAFE_FREE(type_fse_table);                                                                                                   \
+				type_table_log = bitstream_read_bits(compressed_bit_stream, 4) + 5;                                                                                            \
+				if (type_table_log > type_max_log) {                                                                                                                           \
+					WARNING_LOG("Table log exceeds the maximum value of %u: %u.\n", type_max_log, type_table_log); 															   \
+					return -ZSTD_CORRUPTED_DATA;                                                                                                                               \
+				}                                                                                                                                                              \
+				short int* frequencies = NULL;                                                                                                                                 \
+				unsigned short int probabilities_cnt = 0;                                                                                                                      \
+				if ((err = read_probabilities(compressed_bit_stream, type_table_log, type_max_symbol, &frequencies, &probabilities_cnt)) < 0) {                                \
+					WARNING_LOG("An error occurred while reading the probabilities for predefined.\n"); 																	   \
+					return err;                                                                                                                                                \
+				}                                                                                                                                                              \
+				if ((err = fse_build_table(type_table_log, frequencies, probabilities_cnt, &(type_fse_table))) < 0) {                                                          \
+					XCOMP_SAFE_FREE(frequencies);                                                                                                                              \
+					WARNING_LOG("An error occurred while building the table for predefined.\n"); 																			   \
+					return err;                                                                                                                                                \
+				}                                                                                                                                                              \
+				XCOMP_SAFE_FREE(frequencies);                                                                                                                                  \
+				type_rle = NOT_USING_RLE;                                                                                                                                      \
+				break;                                                                                                                                                         \
+			}                                                                                                                                                                  \
+			case RLE_MODE: {                                                                                                                                                   \
+				type_rle = SAFE_BYTE_READ_WITH_CAST(compressed_bit_stream, sizeof(unsigned char), 1, unsigned char, type_rle, 0);                                              \
+				break;                                                                                                                                                         \
+			}                                                                                                                                                                  \
+			case REPEAT_MODE: {                                                                                                                                                \
+				if (type_fse_table == NULL) {                                                                                                                                  \
+					WARNING_LOG("Uninitialized " #type_fse_table " either due to a previous IO error, or the stream is actually corrupted.\n"); 							   \
+					return -ZSTD_CORRUPTED_DATA;                                                                                                                               \
+				}                                                                                                                                                              \
+				break;                                                                                                                                                         \
+			}                                                                                                                                                                  \
+		}                                                                                                                                                                      \
 	} while(FALSE)
 
 static int decode_sequences(BitStream* sequence_compressed_bit_stream, Workspace* workspace) {
@@ -831,8 +803,8 @@ static int decode_sequences(BitStream* sequence_compressed_bit_stream, Workspace
 		unsigned int ml_code = workspace -> sequence_section.ml_rle == NOT_USING_RLE ? (workspace -> sequence_section.ml_fse_table)[ml_state].symbol : workspace -> sequence_section.ml_rle;
 		unsigned int ol_code = workspace -> sequence_section.ol_rle == NOT_USING_RLE ? (workspace -> sequence_section.ol_fse_table)[ol_state].symbol : workspace -> sequence_section.ol_rle;
 		
-		LengthCode ll_actual_codes = *QCOW_CAST_PTR(ll_codes[ll_code], LengthCode);
-		LengthCode ml_actual_codes = *QCOW_CAST_PTR(ml_codes[ml_code], LengthCode);
+		LengthCode ll_actual_codes = *XCOMP_CAST_PTR(ll_codes[ll_code], LengthCode);
+		LengthCode ml_actual_codes = *XCOMP_CAST_PTR(ml_codes[ml_code], LengthCode);
 	
 		if (ol_code > MAX_OL_CODE) {
 			WARNING_LOG("Offset Length code cannot be bigger than %u: %u\n", MAX_OL_CODE, ol_code);
@@ -861,14 +833,14 @@ static int decode_sequences(BitStream* sequence_compressed_bit_stream, Workspace
 		}
 
 		if (sequence_compressed_bit_stream -> error) {
-			QCOW_SAFE_FREE(workspace -> sequences);
+			XCOMP_SAFE_FREE(workspace -> sequences);
 			WARNING_LOG("Tried to read after the end of the stream.\n");
 			return -ZSTD_CORRUPTED_DATA;
 		}
 	}	
 	
 	if (!IS_REVERSED_EOS(sequence_compressed_bit_stream)) {
-		QCOW_SAFE_FREE(workspace -> sequences);
+		XCOMP_SAFE_FREE(workspace -> sequences);
 		WARNING_LOG("Stream not empty.\n");
 		PRINT_BIT_STREAM_INFO(sequence_compressed_bit_stream);
 		return -ZSTD_CORRUPTED_DATA;
@@ -906,7 +878,7 @@ static int parse_sequence_section(BitStream* compressed_bit_stream, Workspace* w
 		return -ZSTD_RESERVED_FIELD;
 	}
 	
-	DEBUG_LOG("SymbolCompressionModes: (0x%X)\n", *QCOW_CAST_PTR(&symbol_compression_modes, unsigned char));
+	DEBUG_LOG("SymbolCompressionModes: (0x%X)\n", *XCOMP_CAST_PTR(&symbol_compression_modes, unsigned char));
 	DEBUG_LOG(" - literals_length_mode: '%s'\n", compression_modes_str[symbol_compression_modes.literals_len_mode]);
 	DEBUG_LOG(" - offset_mode: '%s'\n", compression_modes_str[symbol_compression_modes.offset_mode]);
 	DEBUG_LOG(" - match_length_mode: '%s'\n", compression_modes_str[symbol_compression_modes.match_len_mode]);
@@ -932,8 +904,8 @@ static int parse_sequence_section(BitStream* compressed_bit_stream, Workspace* w
 	
 	// Parse the FSE Table as defined in decode_sequences_with_rle in zstd-rs, the price of few branches is feasible as at the moment we value more readability.
 	// At each pass it will decode a Sequence, so we need a struct for the Sequences
-	QCOW_SAFE_FREE(workspace -> sequences);
-	workspace -> sequences = (Sequence*) qcow_calloc(workspace -> sequence_len, sizeof(Sequence));
+	XCOMP_SAFE_FREE(workspace -> sequences);
+	workspace -> sequences = (Sequence*) xcomp_calloc(workspace -> sequence_len, sizeof(Sequence));
 	if (workspace -> sequences == NULL) {
 		WARNING_LOG("Failed to allocate sequences buffer.\n");
 		return -ZSTD_IO_ERROR;
@@ -1057,7 +1029,7 @@ static int decompress_block(BitStream* compressed_bit_stream, Workspace* workspa
 
 static int parse_block(BitStream* bit_stream, Workspace* workspace, unsigned int block_maximum_size) {
 	BlockHeader block_header = SAFE_BYTE_READ_WITH_CAST(bit_stream, sizeof(BlockHeader), 1, BlockHeader, block_header, {0});
-	DEBUG_LOG("BlockHeader: (0x%X)\n", *QCOW_CAST_PTR(&block_header, unsigned int));
+	DEBUG_LOG("BlockHeader: (0x%X)\n", *XCOMP_CAST_PTR(&block_header, unsigned int));
 	DEBUG_LOG(" - last_block: %u\n", block_header.last_block);
 	DEBUG_LOG(" - block_type: '%s'\n", block_types_str[block_header.block_type]);
 	DEBUG_LOG(" - block_size: %u\n", block_header.block_size);
@@ -1066,9 +1038,9 @@ static int parse_block(BitStream* bit_stream, Workspace* workspace, unsigned int
 	
 	if (block_header.block_type == RAW_BLOCK) {
 		if (workspace -> frame_buffer_len + block_header.block_size) {
-			workspace -> frame_buffer = (unsigned char*) qcow_realloc(workspace -> frame_buffer, (workspace -> frame_buffer_len + block_header.block_size) * sizeof(unsigned char));
+			workspace -> frame_buffer = (unsigned char*) xcomp_realloc(workspace -> frame_buffer, (workspace -> frame_buffer_len + block_header.block_size) * sizeof(unsigned char));
 			if (workspace -> frame_buffer == NULL) {
-				WARNING_LOG("Failed to qcow_reallocate frame buffer.\n");
+				WARNING_LOG("Failed to xcomp_reallocate frame buffer.\n");
 				return -ZSTD_IO_ERROR;
 			}
 
@@ -1077,9 +1049,9 @@ static int parse_block(BitStream* bit_stream, Workspace* workspace, unsigned int
 			workspace -> frame_buffer_len += block_header.block_size;
 		}
 	} else if (block_header.block_type == RLE_BLOCK) {
-		workspace -> frame_buffer = (unsigned char*) qcow_realloc(workspace -> frame_buffer, (workspace -> frame_buffer_len + block_header.block_size) * sizeof(unsigned char));
+		workspace -> frame_buffer = (unsigned char*) xcomp_realloc(workspace -> frame_buffer, (workspace -> frame_buffer_len + block_header.block_size) * sizeof(unsigned char));
 		if (workspace -> frame_buffer == NULL) {
-			WARNING_LOG("Failed to qcow_reallocate frame buffer.\n");
+			WARNING_LOG("Failed to xcomp_reallocate frame buffer.\n");
 			return -ZSTD_IO_ERROR;
 		}
 		
@@ -1087,9 +1059,9 @@ static int parse_block(BitStream* bit_stream, Workspace* workspace, unsigned int
 		mem_set(workspace -> frame_buffer + workspace -> frame_buffer_len, rle_val, block_header.block_size * sizeof(unsigned char));
 		workspace -> frame_buffer_len += block_header.block_size;
 	} else {
-		workspace -> frame_buffer = (unsigned char*) qcow_realloc(workspace -> frame_buffer, (workspace -> frame_buffer_len + block_maximum_size) * sizeof(unsigned char));
+		workspace -> frame_buffer = (unsigned char*) xcomp_realloc(workspace -> frame_buffer, (workspace -> frame_buffer_len + block_maximum_size) * sizeof(unsigned char));
 		if (workspace -> frame_buffer == NULL) {
-			WARNING_LOG("Failed to qcow_reallocate frame buffer.\n");
+			WARNING_LOG("Failed to xcomp_reallocate frame buffer.\n");
 			return -ZSTD_IO_ERROR;
 		}
 		
@@ -1097,14 +1069,14 @@ static int parse_block(BitStream* bit_stream, Workspace* workspace, unsigned int
 		BitStream compressed_bit_stream = CREATE_BIT_STREAM(compressed_stream, block_header.block_size);
 		int err = 0;
 		if ((err = decompress_block(&compressed_bit_stream, workspace)) < 0) {
-			QCOW_SAFE_FREE(workspace -> frame_buffer);
+			XCOMP_SAFE_FREE(workspace -> frame_buffer);
 			WARNING_LOG("An error occurred while decompressing the block.\n");
 			return err;
 		}
 
-		workspace -> frame_buffer = (unsigned char*) qcow_realloc(workspace -> frame_buffer, workspace -> frame_buffer_len * sizeof(unsigned char));
+		workspace -> frame_buffer = (unsigned char*) xcomp_realloc(workspace -> frame_buffer, workspace -> frame_buffer_len * sizeof(unsigned char));
 		if (workspace -> frame_buffer == NULL && workspace -> frame_buffer_len != 0) {
-			WARNING_LOG("Failed to qcow_reallocate frame buffer.\n");
+			WARNING_LOG("Failed to xcomp_reallocate frame buffer.\n");
 			return -ZSTD_IO_ERROR;
 		}
 	}
@@ -1199,10 +1171,10 @@ static int parse_frames(BitStream* bit_stream, unsigned char** decompressed_data
 	}
 	
 	if (workspace.frame_buffer_len) {
-		*decompressed_data = (unsigned char*) qcow_realloc(*decompressed_data, (*decompressed_data_length + workspace.frame_buffer_len) * sizeof(unsigned char));
+		*decompressed_data = (unsigned char*) xcomp_realloc(*decompressed_data, (*decompressed_data_length + workspace.frame_buffer_len) * sizeof(unsigned char));
 		if (*decompressed_data == NULL) {
 			deallocate_workspace(&workspace);
-			WARNING_LOG("Failed to qcow_reallocate the decompressed data buffer.\n");
+			WARNING_LOG("Failed to xcomp_reallocate the decompressed data buffer.\n");
 			return -ZSTD_IO_ERROR;
 		}
 
@@ -1216,13 +1188,10 @@ static int parse_frames(BitStream* bit_stream, unsigned char** decompressed_data
 }
 
 /* ---------------------------------------------------------------------------------------------------------- */
-// TODO: Rewrite the comments for better orienting external supporters
-// TODO: Rewrite the warnings msgs to have a compact style
-// TODO: Note that as most of CPUs use little-endian, and that the ZSTD format follows that, it could be unjustified the use of LE_CONVERT to convert to LE from BE, in rare cases.
 unsigned char* zstd_inflate(unsigned char* stream, unsigned int size, unsigned int* decompressed_data_length, int* zstd_err) {
-	unsigned char* decompressed_data = (unsigned char*) qcow_calloc(1, sizeof(unsigned char));
+	unsigned char* decompressed_data = (unsigned char*) xcomp_calloc(1, sizeof(unsigned char));
 	if (decompressed_data == NULL) {
-		QCOW_SAFE_FREE(stream);
+		XCOMP_SAFE_FREE(stream);
 		WARNING_LOG("Failed to allocate decompressed data buffer.\n");
 		*zstd_err = -ZSTD_IO_ERROR;
 		return ((unsigned char*) "An error occurred while initializing the buffer for the decompressed data.\n");
@@ -1235,7 +1204,7 @@ unsigned char* zstd_inflate(unsigned char* stream, unsigned int size, unsigned i
 	do {
 		DEBUG_LOG("Parsing frame num %u:\n", frames_cnt);
 		if ((*zstd_err = parse_frames(&bit_stream, &decompressed_data, decompressed_data_length))) {
-			QCOW_MULTI_FREE(stream, decompressed_data);
+			XCOMP_MULTI_FREE(stream, decompressed_data);
 			return ((unsigned char*) "An error occurred while parsing the frame.\n");
 		}
 		frames_cnt++;
@@ -1247,9 +1216,9 @@ unsigned char* zstd_inflate(unsigned char* stream, unsigned int size, unsigned i
 	}
 
 	*zstd_err = 0;
-	QCOW_SAFE_FREE(stream);
+	XCOMP_SAFE_FREE(stream);
 
 	return decompressed_data;
 }
 
-#endif //_ZSTD_H_
+#endif //_ZSTD_DECOMPRESS_H_

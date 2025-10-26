@@ -18,10 +18,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define _QCOW_PRINTING_UTILS_
-#define _QCOW_UTILS_IMPLEMENTATION_
+#define _XCOMP_PRINTING_UTILS_
+#define _XCOMP_UTILS_IMPLEMENTATION_
 #include "./utils.h"
-#include "./zlib.h"
+#include "./xcomp_zlib.h"
 
 static const char zlib_data[] = "This is a test string, DEFLATE.";
 
@@ -31,8 +31,9 @@ int main(void) {
 	printf("ZLib test string: '%s'\n", zlib_data);
 
 	unsigned int zlib_compressed_data_length = 0;
-	unsigned char* zlib_deflate_test = (unsigned char*) qcow_calloc(sizeof(zlib_data), sizeof(unsigned char));
+	unsigned char* zlib_deflate_test = (unsigned char*) xcomp_calloc(sizeof(zlib_data), sizeof(unsigned char));
 	mem_cpy(zlib_deflate_test, zlib_data, sizeof(zlib_data));
+	
 	unsigned char* zlib_compressed_data = zlib_deflate((unsigned char*) zlib_deflate_test, sizeof(zlib_data), &zlib_compressed_data_length, &err);
 	if (err) {
 		printf(COLOR_STR("ZLIB_ERROR::%s: ", RED) "%s", zlib_errors_str[-err], zlib_compressed_data);
@@ -52,12 +53,12 @@ int main(void) {
 		printf(COLOR_STR("ERROR: ", RED) "Failed to decompress/compress the string.\n");
 		printf("Original String: '%s'\n", zlib_data);
 		printf("String After   : '%.*s'\n", zlib_decompressed_data_length, zlib_decompressed_data);
-		qcow_free(zlib_decompressed_data);
+		xcomp_free(zlib_decompressed_data);
 		return -1;
 	}
 	
 	printf("ZLib test string: '%.*s'\n", zlib_decompressed_data_length, zlib_decompressed_data);
-	qcow_free(zlib_decompressed_data);
+	xcomp_free(zlib_decompressed_data);
 	
 	return 0;
 }

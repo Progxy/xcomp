@@ -22,7 +22,10 @@
  * Resources: deflate <https://www.ietf.org/rfc/rfc1951.txt> *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#include "./bitstream.h"
+#include "../common/bitstream.h"
+
+// TODO: Possibly create hf_tree struct to contain all the length - size couples, generally reduce the size of functions' declaration
+// TODO: Write better comments and error messages
 
 // -----------------
 //  Constant Values
@@ -34,7 +37,7 @@
 #define DEALLOCATE_TREES(...) 																	\
 	do {																						\
 		HFTree* hf_trees[] = { NULL, ##__VA_ARGS__ };							 				\
-		for (unsigned int i = 1; i < QCOW_ARR_SIZE(hf_trees); ++i) deallocate_hf_tree(hf_trees[i]);	\
+		for (unsigned int i = 1; i < XCOMP_ARR_SIZE(hf_trees); ++i) deallocate_hf_tree(hf_trees[i]);	\
 	} while (FALSE)
 
 #define CREATE_CALLBACK(...) \
@@ -46,10 +49,69 @@
 // ------------------
 //  Static variables
 // ------------------
-static const unsigned short int fixed_hf_distances_table[] = {0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F};
-static const unsigned char fixed_hf_distances_lengths[] = {0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5};
-static const unsigned short int fixed_hf_literals_table[] = {0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x7B, 0x7C, 0x7D, 0x7E, 0x7F, 0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x8B, 0x8C, 0x8D, 0x8E, 0x8F, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF, 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0x190, 0x191, 0x192, 0x193, 0x194, 0x195, 0x196, 0x197, 0x198, 0x199, 0x19A, 0x19B, 0x19C, 0x19D, 0x19E, 0x19F, 0x1A0, 0x1A1, 0x1A2, 0x1A3, 0x1A4, 0x1A5, 0x1A6, 0x1A7, 0x1A8, 0x1A9, 0x1AA, 0x1AB, 0x1AC, 0x1AD, 0x1AE, 0x1AF, 0x1B0, 0x1B1, 0x1B2, 0x1B3, 0x1B4, 0x1B5, 0x1B6, 0x1B7, 0x1B8, 0x1B9, 0x1BA, 0x1BB, 0x1BC, 0x1BD, 0x1BE, 0x1BF, 0x1C0, 0x1C1, 0x1C2, 0x1C3, 0x1C4, 0x1C5, 0x1C6, 0x1C7, 0x1C8, 0x1C9, 0x1CA, 0x1CB, 0x1CC, 0x1CD, 0x1CE, 0x1CF, 0x1D0, 0x1D1, 0x1D2, 0x1D3, 0x1D4, 0x1D5, 0x1D6, 0x1D7, 0x1D8, 0x1D9, 0x1DA, 0x1DB, 0x1DC, 0x1DD, 0x1DE, 0x1DF, 0x1E0, 0x1E1, 0x1E2, 0x1E3, 0x1E4, 0x1E5, 0x1E6, 0x1E7, 0x1E8, 0x1E9, 0x1EA, 0x1EB, 0x1EC, 0x1ED, 0x1EE, 0x1EF, 0x1F0, 0x1F1, 0x1F2, 0x1F3, 0x1F4, 0x1F5, 0x1F6, 0x1F7, 0x1F8, 0x1F9, 0x1FA, 0x1FB, 0x1FC, 0x1FD, 0x1FE, 0x1FF, 0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7};
-static const unsigned char fixed_hf_literals_lengths[] = {0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8};	
+static const unsigned short int fixed_hf_distances_table[] = {
+	0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE,
+	0xF, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A,
+	0x1B, 0x1C, 0x1D, 0x1E, 0x1F
+};
+
+static const unsigned char fixed_hf_distances_lengths[] = {
+	0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5,
+	0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5,
+	0x5, 0x5
+};
+
+static const unsigned short int fixed_hf_literals_table[] = {
+	0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B,
+	0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,
+	0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52, 0x53,
+	0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F,
+	0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B,
+	0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77,
+	0x78, 0x79, 0x7A, 0x7B, 0x7C, 0x7D, 0x7E, 0x7F, 0x80, 0x81, 0x82, 0x83,
+	0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x8B, 0x8C, 0x8D, 0x8E, 0x8F,
+	0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B,
+	0x9C, 0x9D, 0x9E, 0x9F, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
+	0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF, 0xB0, 0xB1, 0xB2, 0xB3,
+	0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF,
+	0x190, 0x191, 0x192, 0x193, 0x194, 0x195, 0x196, 0x197, 0x198, 0x199,
+	0x19A, 0x19B, 0x19C, 0x19D, 0x19E, 0x19F, 0x1A0, 0x1A1, 0x1A2, 0x1A3,
+	0x1A4, 0x1A5, 0x1A6, 0x1A7, 0x1A8, 0x1A9, 0x1AA, 0x1AB, 0x1AC, 0x1AD,
+	0x1AE, 0x1AF, 0x1B0, 0x1B1, 0x1B2, 0x1B3, 0x1B4, 0x1B5, 0x1B6, 0x1B7,
+	0x1B8, 0x1B9, 0x1BA, 0x1BB, 0x1BC, 0x1BD, 0x1BE, 0x1BF, 0x1C0, 0x1C1,
+	0x1C2, 0x1C3, 0x1C4, 0x1C5, 0x1C6, 0x1C7, 0x1C8, 0x1C9, 0x1CA, 0x1CB,
+	0x1CC, 0x1CD, 0x1CE, 0x1CF, 0x1D0, 0x1D1, 0x1D2, 0x1D3, 0x1D4, 0x1D5,
+	0x1D6, 0x1D7, 0x1D8, 0x1D9, 0x1DA, 0x1DB, 0x1DC, 0x1DD, 0x1DE, 0x1DF,
+	0x1E0, 0x1E1, 0x1E2, 0x1E3, 0x1E4, 0x1E5, 0x1E6, 0x1E7, 0x1E8, 0x1E9,
+	0x1EA, 0x1EB, 0x1EC, 0x1ED, 0x1EE, 0x1EF, 0x1F0, 0x1F1, 0x1F2, 0x1F3,
+	0x1F4, 0x1F5, 0x1F6, 0x1F7, 0x1F8, 0x1F9, 0x1FA, 0x1FB, 0x1FC, 0x1FD,
+	0x1FE, 0x1FF, 0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB,
+	0xC, 0xD, 0xE, 0xF, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0xC0,
+	0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7
+};
+
+static const unsigned char fixed_hf_literals_lengths[] = {
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0x9, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7,
+	0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x8, 0x8, 0x8
+};	
 
 #define FIXED_LITERALS_TREE(hf) 								\
 	hf.table = (unsigned short int*) fixed_hf_literals_table; 	\
@@ -114,16 +176,16 @@ unsigned char* zlib_deflate(unsigned char* data_buffer, unsigned int data_buffer
 /* -------------------------------------------------------------------------------------------------------- */
 
 static void deallocate_hf_tree(HFTree* hf_tree) {
-	QCOW_SAFE_FREE(hf_tree -> lengths);
-	QCOW_SAFE_FREE(hf_tree -> table);
+	XCOMP_SAFE_FREE(hf_tree -> lengths);
+	XCOMP_SAFE_FREE(hf_tree -> table);
 	return;
 }
 
 static int length_distance_encoding(const unsigned char* data_stream, unsigned int data_stream_size, Match** distance_encoding, unsigned int* distance_encoding_cnt) {
 	*distance_encoding_cnt = MIN(data_stream_size, 3);
-	*distance_encoding = (Match*) qcow_realloc(*distance_encoding, *distance_encoding_cnt * sizeof(Match));
+	*distance_encoding = (Match*) xcomp_realloc(*distance_encoding, *distance_encoding_cnt * sizeof(Match));
 	if (*distance_encoding == NULL) {
-		WARNING_LOG("Failed to qcow_reallocate buffer for distance_encoding.\n");
+		WARNING_LOG("Failed to xcomp_reallocate buffer for distance_encoding.\n");
 		return -ZLIB_IO_ERROR;
 	}
 
@@ -145,9 +207,9 @@ static int length_distance_encoding(const unsigned char* data_stream, unsigned i
 
 		cur_len--;
 		
-		*distance_encoding = (Match*) qcow_realloc(*distance_encoding, sizeof(Match) * (++(*distance_encoding_cnt)));
+		*distance_encoding = (Match*) xcomp_realloc(*distance_encoding, sizeof(Match) * (++(*distance_encoding_cnt)));
 		if (*distance_encoding == NULL) {
-			WARNING_LOG("Failed to qcow_reallocate buffer for distance_encoding.\n");
+			WARNING_LOG("Failed to xcomp_reallocate buffer for distance_encoding.\n");
 			return -ZLIB_IO_ERROR;
 		}
 		
@@ -186,9 +248,9 @@ static int length_distance_encoding(const unsigned char* data_stream, unsigned i
 	}
 	
 	// Append the block delimiter
-	*distance_encoding = (Match*) qcow_realloc(*distance_encoding, sizeof(Match) * (++(*distance_encoding_cnt)));
+	*distance_encoding = (Match*) xcomp_realloc(*distance_encoding, sizeof(Match) * (++(*distance_encoding_cnt)));
 	if (*distance_encoding == NULL) {
-		WARNING_LOG("Failed to qcow_reallocate buffer for distance_encoding.\n");
+		WARNING_LOG("Failed to xcomp_reallocate buffer for distance_encoding.\n");
 		return -ZLIB_IO_ERROR;
 	}
 	
@@ -212,7 +274,7 @@ static void update_hf_nodes(HFNode new_node, HFNode* hf_nodes, unsigned int hf_n
 }
 
 static int build_hf_table(HFTree* hf_tree) {
-	hf_tree -> table = (unsigned short int*) qcow_calloc(hf_tree -> size, sizeof(unsigned short int));
+	hf_tree -> table = (unsigned short int*) xcomp_calloc(hf_tree -> size, sizeof(unsigned short int));
 	if (hf_tree -> table == NULL) {
 		WARNING_LOG("Failed to allocate buffer for hf_tree.\n");
 		return -ZLIB_IO_ERROR;
@@ -245,14 +307,14 @@ static int generate_hf_tree(unsigned short int* data_stream, unsigned int data_s
 	}
 	
 	if (hf_tree -> size == 0) {
-		hf_tree -> table = (unsigned short int*) qcow_calloc(MAX(hf_tree -> size, 1), sizeof(unsigned short int));
-		hf_tree -> lengths = (unsigned char*) qcow_calloc(MAX(hf_tree -> size, 1), sizeof(unsigned char));
+		hf_tree -> table = (unsigned short int*) xcomp_calloc(MAX(hf_tree -> size, 1), sizeof(unsigned short int));
+		hf_tree -> lengths = (unsigned char*) xcomp_calloc(MAX(hf_tree -> size, 1), sizeof(unsigned char));
 		return ZLIB_NO_ERROR;
 	}
 
     // Build Huffman tree (iterative method)
 	unsigned int parent_size = hf_tree -> size;
-	unsigned int* parent = (unsigned int*) qcow_calloc(parent_size, sizeof(unsigned int));
+	unsigned int* parent = (unsigned int*) xcomp_calloc(parent_size, sizeof(unsigned int));
 	if (parent == NULL) {
 		WARNING_LOG("Failed to allocate buffer for parent.\n");
 		return -ZLIB_IO_ERROR;
@@ -269,9 +331,9 @@ static int generate_hf_tree(unsigned short int* data_stream, unsigned int data_s
 
         // Create a new merged node
         HFNode new_node = (HFNode) { .symbol = parent_size++, .freq = left.freq + right.freq};
-		parent = (unsigned int*) qcow_realloc(parent, sizeof(unsigned int) * parent_size);
+		parent = (unsigned int*) xcomp_realloc(parent, sizeof(unsigned int) * parent_size);
 		if (parent == NULL) {
-			WARNING_LOG("Failed to qcow_reallocate buffer for parent.\n");
+			WARNING_LOG("Failed to xcomp_reallocate buffer for parent.\n");
 			return -ZLIB_IO_ERROR;
 		}
 
@@ -285,7 +347,7 @@ static int generate_hf_tree(unsigned short int* data_stream, unsigned int data_s
     }
 
     // Assign bit-lengths from depths
-    hf_tree -> lengths = (unsigned char*) qcow_calloc(hf_tree -> size, sizeof(unsigned char));
+    hf_tree -> lengths = (unsigned char*) xcomp_calloc(hf_tree -> size, sizeof(unsigned char));
 	if (hf_tree -> lengths == NULL) {
 		WARNING_LOG("Failed to allocate buffer for hf_lengths.\n");
 		return -ZLIB_IO_ERROR;
@@ -299,11 +361,11 @@ static int generate_hf_tree(unsigned short int* data_stream, unsigned int data_s
         }
     }
 
-	QCOW_SAFE_FREE(parent);
+	XCOMP_SAFE_FREE(parent);
 
 	int err = 0;
 	if ((err = build_hf_table(hf_tree)) < 0) {
-		QCOW_SAFE_FREE(hf_tree -> lengths);
+		XCOMP_SAFE_FREE(hf_tree -> lengths);
 		WARNING_LOG("An error occurred while building the hf table.\n");
 		return err;
 	}
@@ -312,7 +374,7 @@ static int generate_hf_tree(unsigned short int* data_stream, unsigned int data_s
 }
 
 static int rle_encoding(RLEStream** rle_encoded, unsigned short int* rle_encoded_size, HFTree hf_literals, HFTree hf_distances) {
-	*rle_encoded = (RLEStream*) qcow_calloc(hf_literals.size + hf_distances.size, sizeof(RLEStream));
+	*rle_encoded = (RLEStream*) xcomp_calloc(hf_literals.size + hf_distances.size, sizeof(RLEStream));
 	if (*rle_encoded == NULL) {
 		WARNING_LOG("Failed to allocate buffer for rle_encoded.\n");
 		return -ZLIB_IO_ERROR;
@@ -381,9 +443,9 @@ static int rle_encoding(RLEStream** rle_encoded, unsigned short int* rle_encoded
 		for (unsigned char i = 0; i < limit; ++i, ++(*rle_encoded_size)) (*rle_encoded)[*rle_encoded_size].repeat_cnt = 0, (*rle_encoded)[*rle_encoded_size].value = previous_code;
 	}
 
-	*rle_encoded = (RLEStream*) qcow_realloc(*rle_encoded, (*rle_encoded_size) * sizeof(RLEStream));
+	*rle_encoded = (RLEStream*) xcomp_realloc(*rle_encoded, (*rle_encoded_size) * sizeof(RLEStream));
 	if (*rle_encoded == NULL) {
-		WARNING_LOG("Failed to qcow_reallocate buffer for rle_encoded.\n");
+		WARNING_LOG("Failed to xcomp_reallocate buffer for rle_encoded.\n");
 		return -ZLIB_IO_ERROR;
 	}
 
@@ -392,15 +454,15 @@ static int rle_encoding(RLEStream** rle_encoded, unsigned short int* rle_encoded
 
 static int generate_hf_trees(Match* distance_encoded, unsigned int distance_encoded_size, BitStream* buffer, HFTree* hf_literals, HFTree* hf_distances) {
 	unsigned int distance_size = 0;
-	unsigned short int* literals_data = (unsigned short int*) qcow_calloc(distance_encoded_size, sizeof(unsigned short int));
+	unsigned short int* literals_data = (unsigned short int*) xcomp_calloc(distance_encoded_size, sizeof(unsigned short int));
 	if (literals_data == NULL) {
 		WARNING_LOG("Failed to allocate buffer for literals_data.\n");
 		return -ZLIB_IO_ERROR;
 	}
 
-	unsigned short int* distance_data = (unsigned short int*) qcow_calloc(distance_encoded_size, sizeof(unsigned short int));
+	unsigned short int* distance_data = (unsigned short int*) xcomp_calloc(distance_encoded_size, sizeof(unsigned short int));
 	if (distance_data == NULL) {
-		QCOW_SAFE_FREE(literals_data);
+		XCOMP_SAFE_FREE(literals_data);
 		WARNING_LOG("Failed to allocate buffer for distance_data.\n");
 		return -ZLIB_IO_ERROR;
 	}
@@ -410,12 +472,12 @@ static int generate_hf_trees(Match* distance_encoded, unsigned int distance_enco
 		if (literals_data[i] > 256) distance_data[distance_size++] = distance_encoded[i].distance;
 	}
 
-	if (distance_size == 0) QCOW_SAFE_FREE(distance_data);
+	if (distance_size == 0) XCOMP_SAFE_FREE(distance_data);
 	else {
-		distance_data = (unsigned short int*) qcow_realloc(distance_data, distance_size * sizeof(unsigned short int));
+		distance_data = (unsigned short int*) xcomp_realloc(distance_data, distance_size * sizeof(unsigned short int));
 		if (distance_data == NULL) {
-			QCOW_SAFE_FREE(literals_data);
-			WARNING_LOG("Failed to qcow_reallocate buffer for distance_data.\n");
+			XCOMP_SAFE_FREE(literals_data);
+			WARNING_LOG("Failed to xcomp_reallocate buffer for distance_data.\n");
 			return -ZLIB_IO_ERROR;
 		}
 	}
@@ -423,19 +485,19 @@ static int generate_hf_trees(Match* distance_encoded, unsigned int distance_enco
 	// Generate the tables
 	int err = 0;
 	if ((err = generate_hf_tree(literals_data, distance_encoded_size, hf_literals)) < 0) {
-		QCOW_MULTI_FREE(literals_data, distance_data);
+		XCOMP_MULTI_FREE(literals_data, distance_data);
 		WARNING_LOG("An error occurred while generating the hf_tree for literals.\n");
 		return err;
 	}
 
 	if ((err = generate_hf_tree(distance_data, distance_size, hf_distances)) < 0) {
 		deallocate_hf_tree(hf_literals);
-		QCOW_MULTI_FREE(literals_data, distance_data);
+		XCOMP_MULTI_FREE(literals_data, distance_data);
 		WARNING_LOG("An error occurred while generating the hf_tree for distances.\n");
 		return err;
 	}
 	
-	QCOW_MULTI_FREE(literals_data, distance_data);
+	XCOMP_MULTI_FREE(literals_data, distance_data);
 	
 	RLEStream* rle_encoded = NULL;
 	unsigned short int rle_encoded_size = 0;
@@ -445,10 +507,10 @@ static int generate_hf_trees(Match* distance_encoded, unsigned int distance_enco
 		return err;
 	}
 
-	unsigned short int* rle_encoded_data = (unsigned short int*) qcow_calloc(rle_encoded_size, sizeof(unsigned short int));
+	unsigned short int* rle_encoded_data = (unsigned short int*) xcomp_calloc(rle_encoded_size, sizeof(unsigned short int));
 	if (rle_encoded_data == NULL) {
 		DEALLOCATE_TREES(hf_literals, hf_distances);
-		QCOW_SAFE_FREE(rle_encoded);
+		XCOMP_SAFE_FREE(rle_encoded);
 		WARNING_LOG("Failed to allocate buffer for rle_encoded_data.\n");
 		return -ZLIB_IO_ERROR;
 	}
@@ -458,36 +520,36 @@ static int generate_hf_trees(Match* distance_encoded, unsigned int distance_enco
 	HFTree hf_tree = { .size = HF_TABLE_SIZE };
 	if ((err = generate_hf_tree(rle_encoded_data, rle_encoded_size, &hf_tree)) < 0) {
 		DEALLOCATE_TREES(hf_literals, hf_distances);
-		QCOW_MULTI_FREE(rle_encoded, rle_encoded_data);
+		XCOMP_MULTI_FREE(rle_encoded, rle_encoded_data);
 		WARNING_LOG("An error occurred while generating the hf_tree for the previous hf.\n");
 		return err;
 	}
 
-	QCOW_SAFE_FREE(rle_encoded_data);
+	XCOMP_SAFE_FREE(rle_encoded_data);
 
-	SAFE_BIT_WRITE(buffer, MAX(257, hf_literals -> size) - 257, 5, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); QCOW_SAFE_FREE(rle_encoded)));
-	SAFE_BIT_WRITE(buffer, MAX(1, hf_distances -> size) - 1, 5, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); QCOW_SAFE_FREE(rle_encoded)));
+	SAFE_BIT_WRITE(buffer, MAX(257, hf_literals -> size) - 257, 5, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
+	SAFE_BIT_WRITE(buffer, MAX(1, hf_distances -> size) - 1, 5, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
 
 	const unsigned char order_of_code_lengths[] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
 	unsigned char order_size = 18;
 	for (; order_size > 3; --order_size) if ((hf_tree.lengths)[order_of_code_lengths[order_size]] > 0) break;
-	SAFE_BIT_WRITE(buffer, (order_size + 1) - 4, 4, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); QCOW_SAFE_FREE(rle_encoded)));
+	SAFE_BIT_WRITE(buffer, (order_size + 1) - 4, 4, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
 
-	for (unsigned char i = 0; i <= order_size; ++i) SAFE_BIT_WRITE(buffer, (hf_tree.lengths)[order_of_code_lengths[i]], 3, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); QCOW_SAFE_FREE(rle_encoded)));
+	for (unsigned char i = 0; i <= order_size; ++i) SAFE_BIT_WRITE(buffer, (hf_tree.lengths)[order_of_code_lengths[i]], 3, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
 
 	for (unsigned short int i = 0; i < rle_encoded_size; ++i) {
 		unsigned char value = rle_encoded[i].value;
 		unsigned char repeat_cnt = rle_encoded[i].repeat_cnt;
-		SAFE_REV_BIT_WRITE(buffer, (hf_tree.table)[value], (hf_tree.lengths)[value], CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); QCOW_SAFE_FREE(rle_encoded)));
+		SAFE_REV_BIT_WRITE(buffer, (hf_tree.table)[value], (hf_tree.lengths)[value], CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
 		if (repeat_cnt) {
-			if (value == 16) SAFE_BIT_WRITE(buffer, repeat_cnt - 3, 2, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); QCOW_SAFE_FREE(rle_encoded)));
-			else if (value == 17) SAFE_BIT_WRITE(buffer, repeat_cnt - 3, 3,CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); QCOW_SAFE_FREE(rle_encoded)));
-			else SAFE_BIT_WRITE(buffer, repeat_cnt - 11, 7, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); QCOW_SAFE_FREE(rle_encoded)));
+			if (value == 16) SAFE_BIT_WRITE(buffer, repeat_cnt - 3, 2, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
+			else if (value == 17) SAFE_BIT_WRITE(buffer, repeat_cnt - 3, 3,CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
+			else SAFE_BIT_WRITE(buffer, repeat_cnt - 11, 7, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
 		} 
 	}
 
 	deallocate_hf_tree(&hf_tree);
-	QCOW_SAFE_FREE(rle_encoded);
+	XCOMP_SAFE_FREE(rle_encoded);
 
 	return ZLIB_NO_ERROR;
 }
@@ -514,13 +576,13 @@ static int encode_uncompressed_block(BitStream* compressed_bit_stream, unsigned 
 	SAFE_BIT_WRITE(compressed_bit_stream, is_final, 3);
 	
 	unsigned short int buffer_len = data_buffer_len & 0xFFFF;
-	QCOW_BE_CONVERT(&buffer_len, sizeof(unsigned short int));
+	XCOMP_BE_CONVERT(&buffer_len, sizeof(unsigned short int));
 	
 	SAFE_BYTE_WRITE(compressed_bit_stream, sizeof(unsigned short int), 1, &buffer_len);
 	buffer_len = ~buffer_len;
 	SAFE_BYTE_WRITE(compressed_bit_stream, sizeof(unsigned short int), 1, &buffer_len);
 	
-	QCOW_BE_CONVERT(data_buffer, data_buffer_len);
+	XCOMP_BE_CONVERT(data_buffer, data_buffer_len);
 	SAFE_BYTE_WRITE(compressed_bit_stream, sizeof(unsigned char), data_buffer_len, data_buffer);
 	
 	return ZLIB_NO_ERROR;
@@ -531,7 +593,7 @@ static int hf_compressed_block(BType method, BitStream* buffer, Match* distance_
 
 	// Calculate the Huffman Tree/Table
 	SAFE_NEXT_BIT_WRITE(buffer, is_final, distance_encoding);         		
-	SAFE_BIT_WRITE(buffer, method, 2, QCOW_SAFE_FREE(distance_encoding));			
+	SAFE_BIT_WRITE(buffer, method, 2, XCOMP_SAFE_FREE(distance_encoding));			
 
 	HFTree hf_literals = {0};
 	HFTree hf_distances = {0};
@@ -569,7 +631,7 @@ static int compress_block(BitStream* compressed_bit_stream, unsigned char* data_
 	// Static compression
 	BitStream fixed_block_bit_stream = CREATE_BIT_STREAM(NULL, 0);
 	if ((err = hf_compressed_block(COMPRESSED_FIXED_HF, &fixed_block_bit_stream, distance_encoding, distance_encoding_cnt, is_final)) < 0) {
-		QCOW_SAFE_FREE(distance_encoding);
+		XCOMP_SAFE_FREE(distance_encoding);
 		WARNING_LOG("An error occurred while compressing the block using FIXED_HF.\n");
 		return err;
 	}
@@ -577,13 +639,13 @@ static int compress_block(BitStream* compressed_bit_stream, unsigned char* data_
 	// Dynamic compression
 	BitStream dynamic_block_bit_stream = CREATE_BIT_STREAM(NULL, 0);
 	if ((err = hf_compressed_block(COMPRESSED_DYNAMIC_HF, &dynamic_block_bit_stream, distance_encoding, distance_encoding_cnt, is_final)) < 0) {
-		QCOW_SAFE_FREE(distance_encoding);
+		XCOMP_SAFE_FREE(distance_encoding);
 		deallocate_bit_stream(&fixed_block_bit_stream);
 		WARNING_LOG("An error occurred while compressing the block using DYNAMIC_HF.\n");
 		return err;
 	}
 
-	QCOW_SAFE_FREE(distance_encoding);
+	XCOMP_SAFE_FREE(distance_encoding);
 	
 	// Fallback no compression
 	if (fixed_block_bit_stream.size > data_buffer_len + 5 && dynamic_block_bit_stream.size > data_buffer_len + 5) {
@@ -618,8 +680,6 @@ static int compress_block(BitStream* compressed_bit_stream, unsigned char* data_
 	return ZLIB_NO_ERROR;
 }
 
-// TODO: Possibly create hf_tree struct to contain all the length - size couples, generally reduce the size of functions' declaration
-// TODO: Write better comments and error messages
 unsigned char* zlib_deflate(unsigned char* data_buffer, unsigned int data_buffer_len, unsigned int* compressed_data_len, int* zlib_err) {
 	*compressed_data_len = 0;
 	BitStream compressed_bit_stream = CREATE_BIT_STREAM(NULL, 0);
@@ -631,7 +691,7 @@ unsigned char* zlib_deflate(unsigned char* data_buffer, unsigned int data_buffer
 	while (data_buffer_len >= WINDOW_SIZE) {
 		DEBUG_LOG("Block %u: is_final: %u, ", ++block_cnt, data_buffer_len == WINDOW_SIZE);
 		if ((*zlib_err = compress_block(&compressed_bit_stream, data_buffer + buffer_offset, WINDOW_SIZE, data_buffer_len == WINDOW_SIZE)) < 0) {
-			QCOW_SAFE_FREE(data_buffer);
+			XCOMP_SAFE_FREE(data_buffer);
 			deallocate_bit_stream(&compressed_bit_stream);
 			return ((unsigned char*) "An error occurred while compressing the block.\n");
 		}
@@ -642,13 +702,13 @@ unsigned char* zlib_deflate(unsigned char* data_buffer, unsigned int data_buffer
 	if (data_buffer_len > 0) {
 		DEBUG_LOG("Block %u: is_final: 1, ", ++block_cnt);
 		if ((*zlib_err = compress_block(&compressed_bit_stream, data_buffer + buffer_offset, data_buffer_len, TRUE)) < 0) {
-			QCOW_SAFE_FREE(data_buffer);
+			XCOMP_SAFE_FREE(data_buffer);
 			deallocate_bit_stream(&compressed_bit_stream);
 			return ((unsigned char*) "An error occurred while compressing the block.\n");
 		}
 	}
 
-	QCOW_SAFE_FREE(data_buffer);
+	XCOMP_SAFE_FREE(data_buffer);
 	
 	*compressed_data_len = compressed_bit_stream.size;
 	return compressed_bit_stream.stream;

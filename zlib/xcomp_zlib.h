@@ -15,8 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef _ZLIB_H_
-#define _ZLIB_H_
+#ifndef _XCOMP_ZLIB_H_
+#define _XCOMP_ZLIB_H_
 
 // -----------------
 //  Constant Values 
@@ -57,4 +57,4 @@ static const char* btypes_str[] = { "NO_COMPRESSION", "COMPRESSED_FIXED_HF", "CO
 #include "./zlib_compress.h"
 #include "./zlib_decompress.h"
 
-#endif // _ZLIB_H_
+#endif // _XCOMP_ZLIB_H_

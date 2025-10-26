@@ -8,9 +8,9 @@ It allows developers to **compress and decompress data** using a consistent API,
 ## 🚀 Features
 
 * 🔹 **Multi-format support** — currently includes `zlib` and `zstd`, easily extensible.
-* 🔹 **Single-header build** — generate `xcomp_lib.h` for lightweight integration.
-* 🔹 **Unified API** — use `xcomp.h` to access all formats through a common function set.
-* 🔹 **Flexible linking** — build as static (`.a`), shared (`.so`/`.dll`), or header-only.
+* 🔹 **Single-header build** — use `xcomp_lib.h` for lightweight integration with dynamic or static library.
+* 🔹 **Amalgamate Header** — use `xcomp.h` to access all formats through a common function set.
+* 🔹 **Flexible linking** — build as static (`.a`), dynamic (`.so`/`.dll`), or header-only.
 * 🔹 **Recursive testing** — each module has independent tests, executed from the root `Makefile`.
 
 ---
@@ -29,10 +29,10 @@ xcomp/
 │   ├── xcomp_zstd.h
 │   └── ...
 └── build/
-    ├── xcomp.h           # Unified API header (compress/decompress abstraction)
+    ├── xcomp.h           # Amalgamate header
     ├── xcomp_lib.a       # Static library
-    ├── xcomp_lib.so      # Shared library
-    └── xcomp_lib.h       # Single-header combined library
+    ├── xcomp_lib.so      # Dynamic library
+    └── xcomp_lib.h       # Header exposing simple inflate/deflate functions for use with dynamic/static library
 ```
 
 ---
@@ -40,12 +40,6 @@ xcomp/
 ## ⚙️ Building
 
 From the project root, you can use the provided **Makefile** to build, test, or export the combined library.
-
-### 🏗️ Build all modules
-
-```bash
-make all
-```
 
 ### 🧪 Run all tests
 
@@ -55,13 +49,13 @@ make test
 
 This will recursively invoke each subdirectory’s `Makefile` to test every compression format.
 
-### 📦 Generate single-header library
+### 📦 Generate Amalgamate Header Library
 
 ```bash
-make single
+make amalgamate
 ```
 
-This produces `build/xcomp_lib.h`, combining all module headers into one portable file.
+This produces `build/xcomp.h`, combining all module headers into one portable file.
 
 ### 🔗 Build static/shared libraries
 
