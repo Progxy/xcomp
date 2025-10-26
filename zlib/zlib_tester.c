@@ -21,11 +21,11 @@
 #define _XCOMP_PRINTING_UTILS_
 #define _XCOMP_UTILS_IMPLEMENTATION_
 #include "../common/utils.h"
-#include "./xcomp_zstd.h"
+#include "./xcomp_zlib.h"
 
 int main(int argc, char* argv[]) {
 	if (argc > 3) {
-		printf("Usage: zstd_tester <file> [<out_file>]\n");
+		printf("Usage: zlib_tester <file> [<out_file>]\n");
 		return -1;
 	}
 	
@@ -57,14 +57,14 @@ int main(int argc, char* argv[]) {
 	fclose(test_file);
 
 	int err = 0;
-	unsigned int zstd_decompressed_data_length = 0;
-	unsigned char* zstd_decompressed_data = zstd_inflate((unsigned char*) test_data, file_size, &zstd_decompressed_data_length, &err);
+	unsigned int zlib_decompressed_data_length = 0;
+	unsigned char* zlib_decompressed_data = zlib_inflate((unsigned char*) test_data, file_size, &zlib_decompressed_data_length, &err);
 	if (err) {
-		printf(COLOR_STR("ZSTD_ERROR::%s: ", RED) "%s", zstd_errors_str[-err], zstd_decompressed_data);
+		printf(COLOR_STR("ZLIB_ERROR::%s: ", RED) "%s", zlib_errors_str[-err], zlib_decompressed_data);
 		return err;
 	} 
 	
-	if (out_file_path == NULL) printf("ZSTD decompressed data: '%.*s'\n", zstd_decompressed_data_length, zstd_decompressed_data);
+	if (out_file_path == NULL) printf("ZLIB decompressed data: '%.*s'\n", zlib_decompressed_data_length, zlib_decompressed_data);
 	else {
 		FILE* out_file = NULL;
 		if ((out_file = fopen(out_file_path, "wb")) == NULL) {
@@ -73,9 +73,9 @@ int main(int argc, char* argv[]) {
 		}
 		
 		file_err = 0;
-		if (((long)(file_err = fwrite(zstd_decompressed_data, sizeof(unsigned char), zstd_decompressed_data_length, out_file)) != zstd_decompressed_data_length)) {
+		if (((long)(file_err = fwrite(zlib_decompressed_data, sizeof(unsigned char), zlib_decompressed_data_length, out_file)) != zlib_decompressed_data_length)) {
 			PERROR_LOG("Failed to write from the out file");
-			xcomp_free(zstd_decompressed_data);
+			xcomp_free(zlib_decompressed_data);
 			fclose(out_file);
 			return -1;
 		}
@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) {
 		fclose(out_file);
 	}
 	
-	xcomp_free(zstd_decompressed_data);
+	xcomp_free(zlib_decompressed_data);
 	
 	return 0;
 }

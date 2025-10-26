@@ -20,7 +20,7 @@
 
 #define _XCOMP_PRINTING_UTILS_
 #define _XCOMP_UTILS_IMPLEMENTATION_
-#include "./common/utils.h"
+#include "../common/utils.h"
 #include "./xcomp_zstd.h"
 
 unsigned char zstd_compressed_data[] = {

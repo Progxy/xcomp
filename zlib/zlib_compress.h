@@ -687,7 +687,9 @@ unsigned char* zlib_deflate(unsigned char* data_buffer, unsigned int data_buffer
 	
 	// Fragment the data in block of WINDOW_SIZE
 	unsigned int buffer_offset = 0;
+#ifdef _DEBUG
 	unsigned int block_cnt = 0;
+#endif //_DEBUG
 	while (data_buffer_len >= WINDOW_SIZE) {
 		DEBUG_LOG("Block %u: is_final: %u, ", ++block_cnt, data_buffer_len == WINDOW_SIZE);
 		if ((*zlib_err = compress_block(&compressed_bit_stream, data_buffer + buffer_offset, WINDOW_SIZE, data_buffer_len == WINDOW_SIZE)) < 0) {

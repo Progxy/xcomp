@@ -17,24 +17,24 @@
 
 #!/bin/bash
 
-# TODO: Implement decompression testing
+# TODO: Implement decompression/compression testing
 
 echo "-------------------------"
-echo "| ZSTD automatic tester |"
+echo "| ZLIB automatic tester |"
 echo "-------------------------"
 
-test_folders=("./testdata/good" "./testdata/large" "./testdata/golden-decompression" "./testdata/decodecorpus_files")
-bad_test_folders=("./testdata/bad")
+# test_folders=("./testdata/good" "./testdata/large" "./testdata/golden-decompression" "./testdata/decodecorpus_files")
+# bad_test_folders=("./testdata/bad")
 
 # Count total .zst files
 total_files=0
-for folder in "${test_folders[@]}"; do
-    (( total_files += $(find "$folder" -maxdepth 1 -type f -name "*.zst" | wc -l) ))
-done
+# for folder in "${test_folders[@]}"; do
+#     (( total_files += $(find "$folder" -maxdepth 1 -type f -name "*.zst" | wc -l) ))
+# done
 
-for folder in "${bad_test_folders[@]}"; do
-	(( total_files += $(find "$folder" -maxdepth 1 -type f -name "*.zst" | wc -l) ))
-done
+# for folder in "${bad_test_folders[@]}"; do
+# 	(( total_files += $(find "$folder" -maxdepth 1 -type f -name "*.zst" | wc -l) ))
+# done
 
 tested=0
 passed=0
@@ -66,7 +66,7 @@ for folder in "${test_folders[@]}"; do
 
         # Perform an operation (example: decompress the .zst file)
         rm -f resf
-        out=$(./zstd_tester $f resf 2>&1)
+        out=$(./zlib_tester $f resf 2>&1)
         if [[ $? -ne 0 ]]; then
             echo "Error decoding: $f"
             ((failed++))
@@ -83,6 +83,7 @@ for folder in "${test_folders[@]}"; do
                 continue
             fi
         fi
+
         ((passed++))
     done
 done
@@ -94,12 +95,13 @@ for folder in "${bad_test_folders[@]}"; do
 
 		((tested++))
 		rm -f resf
-		out=$(./zstd_tester $f resf 2>&1)
+		out=$(./zlib_tester $f resf 2>&1)
 		if [[ $? -eq 0 ]]; then
 			echo "Failed to recognize invalid stream: $f"
 			((failed++))
 			continue
 		fi
+	
 		((passed++))
 	done
 done

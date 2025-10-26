@@ -1,5 +1,10 @@
-*/inflate_test
-*/deflate_test
+zstd/inflate_test
+zstd/deflate_test
+zstd/zstd_tester
+
+zlib/deflate_test
+zlib/inflate_test
+zlib/zlib_tester
 
 build/xcomp.h
 build/libxcomp.*

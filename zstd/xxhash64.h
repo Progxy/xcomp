@@ -18,67 +18,72 @@
 #ifndef _XXHASH64_H_
 #define _XXHASH64_H_
 
-#include <stdio.h>
-#include <stdint.h>
-
 /* -------------------------------------------------------------------------------------------------------- */
 // ------------------
 //  Macros Functions
 // ------------------
 #if __has_builtin(__builtin_stdc_rotate_left)
-#define xxh_rotl64 __builtin_stdc_rotate_left
+	#define xxh_rotl64 __builtin_stdc_rotate_left
 #elif __has_builtin(__builtin_stdc_rotate_left) 
-#define xxh_rotl64 __builtin_rotateleft64
+	#define xxh_rotl64 __builtin_rotateleft64
 #else
-#define xxh_rotl64(x,r) (((x) << (r)) | ((x) >> (64 - (r))))
+	#define xxh_rotl64(x,r) (((x) << (r)) | ((x) >> (64 - (r))))
 #endif
 
+#define OPTIONAL
+
+typedef unsigned int       u32;
+typedef unsigned long long u64;
+
+#define STATIC_ASSERT          _Static_assert
+STATIC_ASSERT(sizeof(u32)  == 4,  "u32 must be 4 bytes");
+STATIC_ASSERT(sizeof(u64)  == 8,  "u64 must be 8 bytes");
+ 
 /* -------------------------------------------------------------------------------------------------------- */
 // -----------------
 //  Constant Values
 // -----------------
-#define OPTIONAL
-static const uint64_t PRIME64_1 = 0x9E3779B185EBCA87ULL; 
-static const uint64_t PRIME64_2 = 0xC2B2AE3D27D4EB4FULL;
-static const uint64_t PRIME64_3 = 0x165667B19E3779F9ULL;
-static const uint64_t PRIME64_4 = 0x85EBCA77C2B2AE63ULL;
-static const uint64_t PRIME64_5 = 0x27D4EB2F165667C5ULL;
+static const u64 PRIME64_1 = 0x9E3779B185EBCA87ULL; 
+static const u64 PRIME64_2 = 0xC2B2AE3D27D4EB4FULL;
+static const u64 PRIME64_3 = 0x165667B19E3779F9ULL;
+static const u64 PRIME64_4 = 0x85EBCA77C2B2AE63ULL;
+static const u64 PRIME64_5 = 0x27D4EB2F165667C5ULL;
 
 /* -------------------------------------------------------------------------------------------------------- */
 // ------------------------
 //  Functions Declarations
 // ------------------------
 
-static inline uint64_t xxround(uint64_t acc_n, uint64_t lane_n);
-static inline uint64_t merge_accumulator(uint64_t acc, uint64_t acc_n);
-uint64_t xxhash64(unsigned char* lane, unsigned int byte_size, OPTIONAL uint64_t seed);
+static inline u64 xxround(u64 acc_n, u64 lane_n);
+static inline u64 merge_accumulator(u64 acc, u64 acc_n);
+u64 xxhash64(unsigned char* lane, unsigned int byte_size, OPTIONAL u64 seed);
 
 /* -------------------------------------------------------------------------------------------------------- */
 
-static inline uint64_t xxround(uint64_t acc_n, uint64_t lane_n) {
+static inline u64 xxround(u64 acc_n, u64 lane_n) {
   acc_n += lane_n * PRIME64_2;
   acc_n = xxh_rotl64(acc_n, 31);
   return acc_n * PRIME64_1;
 }
 
-static inline uint64_t merge_accumulator(uint64_t acc, uint64_t acc_n) {
+static inline u64 merge_accumulator(u64 acc, u64 acc_n) {
   acc ^= xxround(0, acc_n);
   return (acc * PRIME64_1) + PRIME64_4;
 }
 
-uint64_t xxhash64(unsigned char* lane, unsigned int byte_size, OPTIONAL uint64_t seed) {
-	uint64_t acc = 0;
+u64 xxhash64(unsigned char* lane, unsigned int byte_size, OPTIONAL u64 seed) {
+	u64 acc = 0;
 	unsigned int remaining_size = byte_size;
 	if (byte_size >= 32) {
-		uint64_t accs[4] = {0};
+		u64 accs[4] = {0};
 		accs[0] = seed + PRIME64_1 + PRIME64_2;
 		accs[1] = seed + PRIME64_2;
 		accs[2] = seed;
 		accs[3] = seed - PRIME64_1;
 	
 		while (remaining_size >= 32) {
-			for (unsigned int i = 0; i < 4; ++i, lane += sizeof(uint64_t)) {
-				accs[i] = xxround(accs[i], *QCOW_CAST_PTR(lane, uint64_t));
+			for (unsigned int i = 0; i < 4; ++i, lane += sizeof(u64)) {
+				accs[i] = xxround(accs[i], *XCOMP_CAST_PTR(lane, u64));
 			}
 			remaining_size -= 32; 
 		}
@@ -93,15 +98,15 @@ uint64_t xxhash64(unsigned char* lane, unsigned int byte_size, OPTIONAL uint64_t
  	acc += byte_size;
 
 	while (remaining_size >= 8) {
-      acc ^= xxround(0, *QCOW_CAST_PTR(lane, uint64_t));
+      acc ^= xxround(0, *XCOMP_CAST_PTR(lane, u64));
       acc = xxh_rotl64(acc, 27) * PRIME64_1 + PRIME64_4;
-      lane += sizeof(uint64_t), remaining_size -= sizeof(uint64_t);
+      lane += sizeof(u64), remaining_size -= sizeof(u64);
 	}
 
 	if (remaining_size >= 4) {
-      acc ^= (*QCOW_CAST_PTR(lane, uint32_t) * PRIME64_1);
+      acc ^= (*XCOMP_CAST_PTR(lane, u32) * PRIME64_1);
       acc = xxh_rotl64(acc, 23) * PRIME64_2 + PRIME64_3;
-	  lane += sizeof(uint32_t), remaining_size -= sizeof(uint32_t);
+	  lane += sizeof(u32), remaining_size -= sizeof(u32);
 	}
 
 	while (remaining_size > 0) {

@@ -1161,11 +1161,11 @@ static int parse_frames(BitStream* bit_stream, unsigned char** decompressed_data
 	if (fhd.content_checksum_flag) {
 		unsigned int frame_checksum = SAFE_BYTE_READ_WITH_CAST(bit_stream, sizeof(unsigned int), 1, unsigned int, frame_checksum, 0);
 		DEBUG_LOG("frame checksum: 0x%X\n", frame_checksum);
-		uint64_t decoded_checksum = xxhash64(workspace.frame_buffer, workspace.frame_buffer_len, 0) & 0xFFFFFFFF;
+		u64 decoded_checksum = xxhash64(workspace.frame_buffer, workspace.frame_buffer_len, 0) & 0xFFFFFFFF;
 		if (decoded_checksum != frame_checksum) {
 			DEBUG_LOG("data(%u): '%.*s'\n", workspace.frame_buffer_len, workspace.frame_buffer_len, workspace.frame_buffer);
 			deallocate_workspace(&workspace);
-			WARNING_LOG("The checksum of the frame doesn't match with the one found at the end of the frame (0x%lX != 0x%X).\n", decoded_checksum, frame_checksum);
+			WARNING_LOG("The checksum of the frame doesn't match with the one found at the end of the frame (0x%llX != 0x%X).\n", decoded_checksum, frame_checksum);
 			return -ZSTD_CHECKSUM_FAIL;
 		}
 	}

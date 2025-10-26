@@ -49,8 +49,10 @@ unsigned char* zstd_deflate(unsigned char* stream, unsigned int size, unsigned i
 /* -------------------------------------------------------------------------------------------------------- */
 
 unsigned char* zstd_deflate(unsigned char* stream, unsigned int size, unsigned int* compressed_len, int* zstd_err) {
-	*compressed_data_len = 0;
+	*compressed_len = 0;
 	*zstd_err = ZSTD_TODO;
+
+	printf("size: %u\n", size);
 
 	printf("Implement compression algorithm.\n");
 

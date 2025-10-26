@@ -42,7 +42,7 @@ int main(void) {
 	unsigned char* zlib_decompressed_data = zlib_inflate((unsigned char*) zlib_deflate_test, sizeof(zlib_compressed_data), &zlib_decompressed_data_length, &err);
 	if (err) {
 		printf(COLOR_STR("ZLIB_ERROR::%s: ", RED) "%s", zlib_errors_str[-err], zlib_decompressed_data);
-		return;
+		return 1;
 	}
 	
 	DEBUG_LOG("Zlib decompressed data: '%.*s'\n", zlib_decompressed_data_length, zlib_decompressed_data);
