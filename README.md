@@ -20,8 +20,6 @@ It allows developers to **compress and decompress data** using a consistent API,
 ```
 xcomp/
 ├── Makefile              # Root makefile (builds all modules, runs tests, and assembles library)
-├── include/
-│   └── xcomp.h           # Unified API header (compress/decompress abstraction)
 ├── zlib/
 │   ├── Makefile          # Module makefile (builds zlib encoder/decoder)
 │   ├── xcomp_zlib.h      # Header-only version for zlib
@@ -31,6 +29,7 @@ xcomp/
 │   ├── xcomp_zstd.h
 │   └── ...
 └── build/
+    ├── xcomp.h           # Unified API header (compress/decompress abstraction)
     ├── xcomp_lib.a       # Static library
     ├── xcomp_lib.so      # Shared library
     └── xcomp_lib.h       # Single-header combined library
