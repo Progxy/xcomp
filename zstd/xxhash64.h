@@ -24,7 +24,7 @@
 // ------------------
 #if __has_builtin(__builtin_stdc_rotate_left)
 	#define xxh_rotl64 __builtin_stdc_rotate_left
-#elif __has_builtin(__builtin_stdc_rotate_left) 
+#elif __has_builtin(__builtin_rotateleft64) 
 	#define xxh_rotl64 __builtin_rotateleft64
 #else
 	#define xxh_rotl64(x,r) (((x) << (r)) | ((x) >> (64 - (r))))

@@ -110,25 +110,10 @@ typedef struct PACKED_STRUCT LengthCode {
 	unsigned int num_bits;
 } LengthCode;
 
-typedef struct PACKED_STRUCT FrameHeaderDescriptor {
-	unsigned char dictionary_id_flag: 2;
-	unsigned char content_checksum_flag: 1;
-	unsigned char reserved: 1;
-	unsigned char unused: 1;
-	unsigned char single_segment_flag: 1;
-	unsigned char frame_content_size_flag: 2;
-} FrameHeaderDescriptor;
-
 typedef struct PACKED_STRUCT WindowDescriptor {
 	unsigned char mantissa: 3;
 	unsigned char exponent: 4;
 } WindowDescriptor;
-
-typedef struct PACKED_STRUCT BlockHeader {
-	unsigned char last_block: 1;
-	BlockType block_type: 2;
-	unsigned int block_size: 21;
-} BlockHeader;
 
 typedef struct PACKED_STRUCT SymbolCompressionModes {
 	unsigned char reserved: 2;

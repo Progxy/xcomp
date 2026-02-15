@@ -20,7 +20,7 @@
 
 #define _XCOMP_PRINTING_UTILS_
 #define _XCOMP_UTILS_IMPLEMENTATION_
-#include "./utils.h"
+#include "../common/utils.h"
 #define _XCOMP_BITSTREAM_
 #include "./xcomp_zstd.h"
 
@@ -37,7 +37,7 @@ int main(void) {
 	
 	unsigned char* zstd_compressed_data = zstd_deflate((unsigned char*) zstd_deflate_test, sizeof(zstd_data), &zstd_compressed_data_length, &err);
 	if (err) {
-		printf(COLOR_STR("ZSTD_ERROR::%s: ", RED) "%s", zstd_errors_str[-err], zstd_compressed_data);
+		printf(COLOR_STR("ZSTD_ERROR::%s: ", RED) "failed to compress the string\n", zstd_errors_str[-err]);
 		return -1;
 	}
 	
@@ -46,7 +46,7 @@ int main(void) {
 	unsigned int zstd_decompressed_data_length = 0;
 	unsigned char* zstd_decompressed_data = zstd_inflate(zstd_compressed_data, zstd_compressed_data_length, &zstd_decompressed_data_length, &err);
 	if (err) {
-		printf(COLOR_STR("ZSTD_ERROR::%s: ", RED) "%s", zstd_errors_str[-err], zstd_decompressed_data);
+		printf(COLOR_STR("ZSTD_ERROR::%s: ", RED) "%s\n", zstd_errors_str[-err], zstd_decompressed_data);
 		return -1;
 	}
 

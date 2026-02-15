@@ -26,6 +26,7 @@
 #define REWIND_BIT_STREAM(bit_stream) ((bit_stream) -> byte_pos = 0, (bit_stream) -> bit_pos = 0, (bit_stream) -> error = 0)
 #define CREATE_BIT_STREAM(data_stream, data_size) (BitStream) { .stream = data_stream, .size = data_size, .byte_pos = 0, .bit_pos = 0, .bit_lower_limit = 0, .error = 0 }
 #define CREATE_REVERSED_BIT_STREAM(data_stream, data_size, data_lower_limit) (BitStream) { .stream = data_stream, .size = data_size, .byte_pos = data_size - 1, .bit_pos = 8, .bit_lower_limit = data_lower_limit, .error = 0 }
+#define CREATE_EMPTY_BIT_STREAM() CREATE_BIT_STREAM(NULL, 0)
 #define PRINT_BIT_STREAM_INFO(bit_stream) DEBUG_LOG("%s: byte_pos: %u, bit_pos: %d, size: %u, error: %u, current_byte: 0x%X.\n", #bit_stream, (bit_stream) -> byte_pos, (bit_stream) -> bit_pos, (bit_stream) -> size, (bit_stream) -> error, ((bit_stream) -> stream)[(bit_stream) -> byte_pos])
 
 #define BITSTREAM_IO_ERROR 1
@@ -34,7 +35,7 @@
 	do {																			\
 		value = bitstream_read_next_bit((bit_stream));								\
 		 if ((bit_stream) -> error) {												\
-	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);												\
+	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
 		 	WARNING_LOG("An error occurred while reading from the bitstream.\n");	\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
@@ -45,7 +46,7 @@
 	do {																			\
 		value = bitstream_read_bits((bit_stream), (nb_bits));						\
 		 if ((bit_stream) -> error) {												\
-	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);												\
+	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
 		 	WARNING_LOG("An error occurred while reading from the bitstream.\n");	\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
@@ -56,7 +57,7 @@
 	do {																			\
 		void* _tmp = bitstream_read_bytes((bit_stream), (size), (nmemb));			\
 		 if (_tmp == NULL) {														\
-	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);												\
+	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
 		 	WARNING_LOG("An error occurred while reading from the bitstream.\n");	\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
@@ -68,18 +69,18 @@
 	do {																			\
 		void* _tmp = bitstream_read_bytes((bit_stream), (size), (nmemb));			\
 		 if (_tmp == NULL) {														\
-	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);												\
+	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
 		 	WARNING_LOG("An error occurred while reading from the bitstream.\n");	\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
-		 var = *XCOMP_CAST_PTR(_tmp, type);												\
+		 var = *XCOMP_CAST_PTR(_tmp, type);											\
 	} while (0)
 
 #define SAFE_NEXT_BIT_WRITE(bit_stream, bit, ...) 									\
 	do {																			\
 		bitstream_write_next_bit((bit_stream), (bit));								\
 		if ((bit_stream) -> error) {												\
-	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);												\
+	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
 		 	WARNING_LOG("An error occurred while writing to the bitstream.\n");		\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
@@ -109,7 +110,7 @@
 	do {																			\
 		bitstream_write_bytes((bit_stream), (size), (nmemb), var);					\
 		 if ((bit_stream) -> error) {												\
-	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);												\
+	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
 		 	WARNING_LOG("An error occurred while writing to the bitstream.\n");		\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
