@@ -33,6 +33,7 @@
 #define MAX_OL_CODE   	               31
 #define U32_BITS                       32
 #define MAX_BLOCK_SIZE                (128 * 1024)
+#define MAX_WINDOW_SIZE               (8 * 1024 * 1024)
 
 /* -------------------------------------------------------------------------------------------------------- */
 // -------
@@ -51,6 +52,7 @@ typedef enum PACKED_STRUCT ZstdError {
     ZSTD_RESERVED_FIELD,
     ZSTD_UNSUPPORTED_FEATURE,
 	ZSTD_DECOMPRESSED_SIZE_MISMATCH,
+	ZSTD_EXCEEDED_WINDOW_SIZE,
     ZSTD_TODO
 } ZstdError;
 
@@ -67,6 +69,7 @@ static const char* zstd_errors_str[] = {
     "ZSTD_RESERVED_FIELD", 
     "ZSTD_UNSUPPORTED_FEATURE", 
 	"ZSTD_DECOMPRESSED_SIZE_MISMATCH",
+	"ZSTD_EXCEEDED_WINDOW_SIZE",
     "ZSTD_TODO"
 };
 

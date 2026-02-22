@@ -1097,10 +1097,15 @@ static int parse_frames(BitStream* bit_stream, unsigned char** decompressed_data
 	unsigned long long int window_size = 0;
 	if (!fhd.single_segment_flag) {
 		WindowDescriptor window_descriptor = SAFE_BYTE_READ_WITH_CAST(bit_stream, sizeof(WindowDescriptor), 1, WindowDescriptor, window_descriptor, {0});
-		unsigned char window_log = 10 + window_descriptor.exponent;
-		unsigned long long int window_base = 1 << window_log;
-		unsigned long long int window_add = (window_base / 8) * window_descriptor.mantissa;
+		const unsigned char window_log = 10 + window_descriptor.exponent;
+		const unsigned long long int window_base = 1 << window_log;
+		const unsigned long long int window_add = (window_base / 8) * window_descriptor.mantissa;
 		window_size = window_base + window_add;
+		
+		if (window_size > MAX_WINDOW_SIZE) {
+			WARNING_LOG("Window Size exceeds max allocable size of 8MB defined by the standard.\n");
+			return -ZSTD_EXCEEDED_WINDOW_SIZE;
+		}
 	}
 	
 	if (fhd.dictionary_id_flag != 0) {

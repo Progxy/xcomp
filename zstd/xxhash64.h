@@ -125,3 +125,4 @@ u64 xxhash64(unsigned char* lane, unsigned int byte_size, OPTIONAL u64 seed) {
 }
 
 #endif //_XXHASH64_H_
+
