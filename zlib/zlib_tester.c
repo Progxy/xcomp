@@ -25,7 +25,7 @@
 #include "./xcomp_zlib.h"
 
 int main(int argc, char* argv[]) {
-	if (argc > 3) {
+	if (argc < 2) {
 		printf("Usage: zlib_tester <file> [<out_file>]\n");
 		return -1;
 	}
