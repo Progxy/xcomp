@@ -32,7 +32,7 @@ amalgamate: ./build/xcomp.h
 	echo "#include <stdlib.h>" >> $@
 	cat common/utils.h >> $@
 	cat common/bitstream.h >> $@
-	gcc $(DEFINITIONS) -D_XCOMP_UTILS_IMPLEMENTATION_ -E -C -P $(XCOMP_HEADERS) >> $@
+	gcc $(DEFINITIONS) -E -C -P $(XCOMP_HEADERS) >> $@
 	echo >> $@
 	echo "#endif /* _XCOMP_H_ */" >> $@
 

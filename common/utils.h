@@ -121,6 +121,7 @@
 	} while(0)
 
 /* -------------------------------------------------------------------------------------------------------- */
+#ifdef _XCOMP_UTILS_IMPLEMENTATION_
 // ------------------------
 //  Functions Declarations
 // ------------------------
@@ -135,7 +136,6 @@ UNUSED_FUNCTION static size_t str_len(const char* str);
 UNUSED_FUNCTION static int str_n_cmp(const char* str1, const char* str2, size_t n);
 
 /* -------------------------------------------------------------------------------------------------------- */
-#ifdef _XCOMP_UTILS_IMPLEMENTATION_
 static void mem_set_var(void* ptr, int value, size_t size, size_t val_size) {
 	if (ptr == NULL) return;
 	for (size_t i = 0; i < size; ++i) XCOMP_CAST_PTR(ptr, unsigned char)[i] = XCOMP_CAST_PTR(&value, unsigned char)[i % val_size]; 

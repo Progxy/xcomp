@@ -40,7 +40,7 @@ int main(void) {
 	
 	mem_cpy(zlib_deflate_test, zlib_compressed_data, sizeof(zlib_compressed_data));
 	
-	unsigned char* zlib_decompressed_data = zlib_inflate((unsigned char*) zlib_deflate_test, sizeof(zlib_compressed_data), &zlib_decompressed_data_length, &err);
+	unsigned char* zlib_decompressed_data = deflate_inflate((unsigned char*) zlib_deflate_test, sizeof(zlib_compressed_data), &zlib_decompressed_data_length, &err);
 	if (err) {
 		printf(COLOR_STR("ZLIB_ERROR::%s: ", RED) "%s", zlib_errors_str[-err], zlib_decompressed_data);
 		return 1;

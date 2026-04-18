@@ -678,6 +678,7 @@ static int compress_block(BitStream* compressed_bit_stream, unsigned char* data_
 	return ZLIB_NO_ERROR;
 }
 
+// TODO: Rename the following to deflate_deflate and create the zlib_deflate function following RFC 1950
 unsigned char* zlib_deflate(unsigned char* data_buffer, unsigned int data_buffer_len, unsigned int* compressed_data_len, int* zlib_err) {
 	*compressed_data_len = 0;
 	BitStream compressed_bit_stream = CREATE_BIT_STREAM(NULL, 0);

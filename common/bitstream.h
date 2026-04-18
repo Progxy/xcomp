@@ -27,16 +27,15 @@
 #define CREATE_BIT_STREAM(data_stream, data_size) (BitStream) { .stream = data_stream, .size = data_size, .byte_pos = 0, .bit_pos = 0, .bit_lower_limit = 0, .error = 0 }
 #define CREATE_REVERSED_BIT_STREAM(data_stream, data_size, data_lower_limit) (BitStream) { .stream = data_stream, .size = data_size, .byte_pos = data_size - 1, .bit_pos = 8, .bit_lower_limit = data_lower_limit, .error = 0 }
 #define CREATE_EMPTY_BIT_STREAM() CREATE_BIT_STREAM(NULL, 0)
-#define PRINT_BIT_STREAM_INFO(bit_stream) DEBUG_LOG("%s: byte_pos: %u, bit_pos: %d, size: %u, error: %u, current_byte: 0x%X.\n", #bit_stream, (bit_stream) -> byte_pos, (bit_stream) -> bit_pos, (bit_stream) -> size, (bit_stream) -> error, ((bit_stream) -> stream)[(bit_stream) -> byte_pos])
+#define PRINT_BIT_STREAM_INFO(bit_stream) DEBUG_LOG("%s: byte_pos: %u, bit_pos: %d, size: %u, error: %u, current_byte: 0x%X.", #bit_stream, (bit_stream) -> byte_pos, (bit_stream) -> bit_pos, (bit_stream) -> size, (bit_stream) -> error, ((bit_stream) -> stream)[(bit_stream) -> byte_pos % (bit_stream) -> byte_pos])
 
-#define BITSTREAM_IO_ERROR 1
 #define SAFE_NEXT_BIT_READ(bit_stream, value, ...) 									\
 	0;																				\
 	do {																			\
 		value = bitstream_read_next_bit((bit_stream));								\
 		 if ((bit_stream) -> error) {												\
 	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
-		 	WARNING_LOG("An error occurred while reading from the bitstream.\n");	\
+		 	WARNING_LOG("An error occurred while reading from the bitstream.");	\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
 	} while (0)
@@ -47,7 +46,7 @@
 		value = bitstream_read_bits((bit_stream), (nb_bits));						\
 		 if ((bit_stream) -> error) {												\
 	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
-		 	WARNING_LOG("An error occurred while reading from the bitstream.\n");	\
+		 	WARNING_LOG("An error occurred while reading from the bitstream.");	\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
 	} while (0)
@@ -58,7 +57,7 @@
 		void* _tmp = bitstream_read_bytes((bit_stream), (size), (nmemb));			\
 		 if (_tmp == NULL) {														\
 	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
-		 	WARNING_LOG("An error occurred while reading from the bitstream.\n");	\
+		 	WARNING_LOG("An error occurred while reading from the bitstream.");	\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
 		 var = _tmp;																\
@@ -67,13 +66,13 @@
 #define SAFE_BYTE_READ_WITH_CAST(bit_stream, size, nmemb, type, var, def_val, ...)  \
 	def_val;																		\
 	do {																			\
-		void* _tmp = bitstream_read_bytes((bit_stream), (size), (nmemb));			\
+		type* _tmp = bitstream_read_bytes((bit_stream), (size), (nmemb));			\
 		 if (_tmp == NULL) {														\
 	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
-		 	WARNING_LOG("An error occurred while reading from the bitstream.\n");	\
+		 	WARNING_LOG("An error occurred while reading from the bitstream.");	\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
-		 var = *XCOMP_CAST_PTR(_tmp, type);											\
+		 mem_cpy(&(var), _tmp, sizeof(type));										\
 	} while (0)
 
 #define SAFE_NEXT_BIT_WRITE(bit_stream, bit, ...) 									\
@@ -81,7 +80,7 @@
 		bitstream_write_next_bit((bit_stream), (bit));								\
 		if ((bit_stream) -> error) {												\
 	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
-		 	WARNING_LOG("An error occurred while writing to the bitstream.\n");		\
+		 	WARNING_LOG("An error occurred while writing to the bitstream.");		\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
 	} while (0)
@@ -91,7 +90,7 @@
 		bitstream_write_bits((bit_stream), (value), (nb_bits));						\
 		if ((bit_stream) -> error) {												\
 	 	 	__VA_ARGS__;															\
-		 	WARNING_LOG("An error occurred while writing to the bitstream.\n");		\
+		 	WARNING_LOG("An error occurred while writing to the bitstream.");		\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
 	} while (0)
@@ -101,7 +100,7 @@
 		bitstream_write_bits_reversed((bit_stream), (value), (nb_bits));			\
 		if ((bit_stream) -> error) {												\
 	 	 	__VA_ARGS__;															\
-		 	WARNING_LOG("An error occurred while writing to the bitstream.\n");		\
+		 	WARNING_LOG("An error occurred while writing to the bitstream.");		\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
 	} while (0)
@@ -111,7 +110,7 @@
 		bitstream_write_bytes((bit_stream), (size), (nmemb), var);					\
 		 if ((bit_stream) -> error) {												\
 	 	 	XCOMP_MULTI_FREE(__VA_ARGS__);											\
-		 	WARNING_LOG("An error occurred while writing to the bitstream.\n");		\
+		 	WARNING_LOG("An error occurred while writing to the bitstream.");		\
 		 	return -BITSTREAM_IO_ERROR;												\
 		 }																			\
 	} while (0)
@@ -120,6 +119,10 @@
 // ---------
 //  Structs
 // ---------
+typedef enum {
+   	BITSTREAM_IO_ERROR = 1
+} BitStreamError;
+
 typedef struct PACKED_STRUCT BitStream {
 	unsigned char* stream;
 	unsigned int size;
@@ -152,7 +155,7 @@ UNUSED_FUNCTION static void deallocate_bit_stream(BitStream* bit_stream);
 // TODO: All this functions can be further optimized for performance.
 static void* bitstream_read_bytes(BitStream* bit_stream, unsigned int size, unsigned int nmemb) {
 	if (bit_stream -> error) {
-		WARNING_LOG("Bitstream error bytes.\n"); 
+		WARNING_LOG("Bitstream error bytes."); 
 		return NULL;
 	}
 
@@ -164,7 +167,7 @@ static void* bitstream_read_bytes(BitStream* bit_stream, unsigned int size, unsi
 
 	if (bit_stream -> byte_pos + tot_size > bit_stream -> size) {
 		bit_stream -> error = 1;
-		WARNING_LOG("Bitstream gen error bytes, size: %u, nmemb: %u.\n", size, nmemb); 
+		WARNING_LOG("Bitstream gen error bytes, size: %u, nmemb: %u.", size, nmemb); 
 		PRINT_BIT_STREAM_INFO(bit_stream);
 		return NULL;
 	}
@@ -177,13 +180,13 @@ static void* bitstream_read_bytes(BitStream* bit_stream, unsigned int size, unsi
 
 static unsigned char bitstream_read_next_bit(BitStream* bit_stream) {
     if (bit_stream -> error) {
-		WARNING_LOG("Bitstream error bits.\n"); 
+		WARNING_LOG("Bitstream error bits."); 
 		return 0;
 	}
 	
 	if (bit_stream -> byte_pos >= bit_stream -> size) {
 		bit_stream -> error = 1;
-		WARNING_LOG("Gen bit error:\n");
+		WARNING_LOG("Gen bit error");
 		PRINT_BIT_STREAM_INFO(bit_stream);
 		return 0;
 	}
@@ -199,7 +202,7 @@ static unsigned char bitstream_read_next_bit(BitStream* bit_stream) {
 static unsigned long long int bitstream_read_bits(BitStream* bit_stream, unsigned char n_bits) {
 	if (n_bits > sizeof(unsigned long long int) * 8) {
 		bit_stream -> error = 1;
-		WARNING_LOG("Tried to read more than %lu bits: %u\n", sizeof(unsigned long long int) * 8, n_bits);
+		WARNING_LOG("Tried to read more than %lu bits: %u", sizeof(unsigned long long int) * 8, n_bits);
 		return 0;
 	}
 
@@ -207,7 +210,7 @@ static unsigned long long int bitstream_read_bits(BitStream* bit_stream, unsigne
     for (unsigned char i = 0; i < n_bits; ++i) {
         bits += bitstream_read_next_bit(bit_stream) << i;
 		if (bit_stream -> error) {
-			WARNING_LOG("Bitstream error n_bits.\n"); 
+			WARNING_LOG("Bitstream error n_bits."); 
 			return 0;
 		}
     }
@@ -217,7 +220,7 @@ static unsigned long long int bitstream_read_bits(BitStream* bit_stream, unsigne
 
 static void* reversed_bitstream_read_bytes(BitStream* reversed_bit_stream, unsigned int size, unsigned int nmemb) {
 	if (reversed_bit_stream -> error) {
-		WARNING_LOG("Reversed Bitstream error bytes.\n"); 
+		WARNING_LOG("Reversed Bitstream error bytes."); 
 		return NULL;
 	}
 
@@ -229,7 +232,7 @@ static void* reversed_bitstream_read_bytes(BitStream* reversed_bit_stream, unsig
 	
 	if (reversed_bit_stream -> byte_pos - tot_size < 0) {
 		reversed_bit_stream -> error = 1;
-		WARNING_LOG("Reversed Bitstream gen error bytes, size: %u, nmemb: %u.\n", size, nmemb); 
+		WARNING_LOG("Reversed Bitstream gen error bytes, size: %u, nmemb: %u.", size, nmemb); 
 		PRINT_BIT_STREAM_INFO(reversed_bit_stream);
 		return NULL;
 	}
@@ -243,7 +246,7 @@ static void* reversed_bitstream_read_bytes(BitStream* reversed_bit_stream, unsig
 
 static unsigned char reversed_bitstream_read_next_bit(BitStream* reversed_bit_stream) {
 	if (reversed_bit_stream -> error) {
-		WARNING_LOG("Reversed Bitstream error bits.\n"); 
+		WARNING_LOG("Reversed Bitstream error bits."); 
 		return 0;
 	}
 	
@@ -252,7 +255,7 @@ static unsigned char reversed_bitstream_read_next_bit(BitStream* reversed_bit_st
 		return 0;
 	} else if (reversed_bit_stream -> byte_pos == 0 && reversed_bit_stream -> bit_pos < reversed_bit_stream -> bit_lower_limit) {
 		reversed_bit_stream -> error = 1;
-		WARNING_LOG("Reversed Gen bit error:\n");
+		WARNING_LOG("Reversed Gen bit error");
 		PRINT_BIT_STREAM_INFO(reversed_bit_stream);
 		return 0;
 	} 
@@ -268,7 +271,7 @@ static unsigned char reversed_bitstream_read_next_bit(BitStream* reversed_bit_st
 UNUSED_FUNCTION static unsigned long long int reversed_bitstream_read_bits(BitStream* reversed_bit_stream, unsigned char n_bits) {
 	if (n_bits > sizeof(unsigned long long int) * 8) {
 		reversed_bit_stream -> error = 1;
-		WARNING_LOG("Tried to read more than %lu bits: %u\n", sizeof(unsigned long long int) * 8, n_bits);
+		WARNING_LOG("Tried to read more than %lu bits: %u", sizeof(unsigned long long int) * 8, n_bits);
 		return 0;
 	}
 
@@ -282,7 +285,7 @@ UNUSED_FUNCTION static unsigned long long int reversed_bitstream_read_bits(BitSt
 
 UNUSED_FUNCTION static void bitstream_unread_bit(BitStream* bit_stream) {
 	if (bit_stream -> error) {
-		WARNING_LOG("Bitsream error unread_bit.\n");
+		WARNING_LOG("Bitsream error unread_bit.");
 		return;
 	}
 
@@ -296,20 +299,20 @@ UNUSED_FUNCTION static void bitstream_unread_bit(BitStream* bit_stream) {
 	} 
 	
 	bit_stream -> error = 1;
-	WARNING_LOG("Cannot unread a new bit_stream.\n");
+	WARNING_LOG("Cannot unread a new bit_stream.");
 
 	return;
 }
 
 UNUSED_FUNCTION static void skip_to_next_byte(BitStream* bit_stream) {
 	if (bit_stream -> error) {
-		WARNING_LOG("Bitstream error skip.\n");
+		WARNING_LOG("Bitstream error skip.");
 		return;
 	}
 
 	if (bit_stream -> byte_pos >= bit_stream -> size) {
 		bit_stream -> error = 1;
-		WARNING_LOG("Bitstream gen error skip.\n");
+		WARNING_LOG("Bitstream gen error skip.");
 		return;
 	}
 
@@ -321,13 +324,13 @@ UNUSED_FUNCTION static void skip_to_next_byte(BitStream* bit_stream) {
 
 static void resize_bit_stream(BitStream* bit_stream) {
 	if (bit_stream -> error) {
-		WARNING_LOG("BitStream error resize stream.\n");
+		WARNING_LOG("BitStream error resize stream.");
 		return;
 	}
 
 	bit_stream -> stream = realloc(bit_stream -> stream, bit_stream -> size * sizeof(unsigned char));
 	if (bit_stream -> stream == NULL) {
-		WARNING_LOG("Failed to reallocate the stream to %u.\n", bit_stream -> size);
+		WARNING_LOG("Failed to reallocate the stream to %u.", bit_stream -> size);
 		bit_stream -> error = 1;
 		return;
 	}
@@ -339,7 +342,7 @@ static void resize_bit_stream(BitStream* bit_stream) {
 
 UNUSED_FUNCTION static void bitstream_bit_copy(BitStream* dest_bit_stream, BitStream* src_bit_stream) {
 	if (dest_bit_stream -> error || src_bit_stream -> error) {
-		WARNING_LOG("BitStream error bit copy.\n");
+		WARNING_LOG("BitStream error bit copy.");
 		return;
 	}
 
@@ -347,7 +350,7 @@ UNUSED_FUNCTION static void bitstream_bit_copy(BitStream* dest_bit_stream, BitSt
 	for (unsigned long long int i = 0; i < bits_cnt; ++i) {
 		bitstream_write_next_bit(dest_bit_stream, (src_bit_stream -> stream)[(i - (i % 8)) / 8] >> (i % 8));
 		if (dest_bit_stream -> error) {
-			WARNING_LOG("BitStream gen error bit copy.\n");
+			WARNING_LOG("BitStream gen error bit copy.");
 			return;
 		}
 	}
@@ -357,7 +360,7 @@ UNUSED_FUNCTION static void bitstream_bit_copy(BitStream* dest_bit_stream, BitSt
 
 UNUSED_FUNCTION static void bitstream_write_bytes(BitStream* bit_stream, unsigned int size, unsigned int nmemb, const void* src) {
 	if (bit_stream -> error) {
-		WARNING_LOG("BitStream error write next bit.\n");
+		WARNING_LOG("BitStream error write next bit.");
 		return;
 	}
 	
@@ -374,7 +377,7 @@ UNUSED_FUNCTION static void bitstream_write_bytes(BitStream* bit_stream, unsigne
 		bit_stream -> size = bit_stream -> byte_pos;
 		resize_bit_stream(bit_stream);
 		if (bit_stream -> error) {
-			WARNING_LOG("Failed to resize the stream.\n");
+			WARNING_LOG("Failed to resize the stream.");
 			return;
 		}
 	}
@@ -386,7 +389,7 @@ UNUSED_FUNCTION static void bitstream_write_bytes(BitStream* bit_stream, unsigne
 
 static void bitstream_write_next_bit(BitStream* bit_stream, unsigned char bit) {
 	if (bit_stream -> error) {
-		WARNING_LOG("BitStream error write next bit.\n");
+		WARNING_LOG("BitStream error write next bit.");
 		return;
 	}
 	
@@ -399,7 +402,7 @@ static void bitstream_write_next_bit(BitStream* bit_stream, unsigned char bit) {
 		bit_stream -> size = bit_stream -> byte_pos + 1;
 		resize_bit_stream(bit_stream);
 		if (bit_stream -> error) {
-			WARNING_LOG("Failed to resize the stream.\n");
+			WARNING_LOG("Failed to resize the stream.");
 			return;
 		}
 	}
@@ -413,7 +416,7 @@ static void bitstream_write_next_bit(BitStream* bit_stream, unsigned char bit) {
 UNUSED_FUNCTION static void bitstream_write_bits_reversed(BitStream* bit_stream, unsigned long long int bits, unsigned char n_bits) {
 	if (n_bits > sizeof(unsigned long long int) * 8) {
 		bit_stream -> error = 1;
-		WARNING_LOG("Tried to write more than %lu bits: %u\n", sizeof(unsigned long long int) * 8, n_bits);
+		WARNING_LOG("Tried to write more than %lu bits: %u", sizeof(unsigned long long int) * 8, n_bits);
 		return;
 	}
 
@@ -421,7 +424,7 @@ UNUSED_FUNCTION static void bitstream_write_bits_reversed(BitStream* bit_stream,
 	for (unsigned char i = 0; i < n_bits; ++i, mask >>= 1) {
 		bitstream_write_next_bit(bit_stream, (bits & mask) >> (n_bits - 1 - i));
 		if (bit_stream -> error) {
-			WARNING_LOG("An error occurred while writing %u bits reversed to the stream.\n", n_bits);
+			WARNING_LOG("An error occurred while writing %u bits reversed to the stream.", n_bits);
 			return;
 		}
 	}
@@ -432,7 +435,7 @@ UNUSED_FUNCTION static void bitstream_write_bits_reversed(BitStream* bit_stream,
 UNUSED_FUNCTION static void bitstream_write_bits(BitStream* bit_stream, unsigned long long int bits, unsigned char n_bits) {
 	if (n_bits > sizeof(unsigned long long int) * 8) {
 		bit_stream -> error = 1;
-		WARNING_LOG("Tried to write more than %lu bits: %u\n", sizeof(unsigned long long int) * 8, n_bits);
+		WARNING_LOG("Tried to write more than %lu bits: %u", sizeof(unsigned long long int) * 8, n_bits);
 		return;
 	}
 
@@ -440,7 +443,7 @@ UNUSED_FUNCTION static void bitstream_write_bits(BitStream* bit_stream, unsigned
 	for (unsigned char i = 0; i < n_bits; ++i, mask <<= 1) {
 		bitstream_write_next_bit(bit_stream, (bits & mask) >> i);
 		if (bit_stream -> error) {
-			WARNING_LOG("An error occurred while writing %u bits to the stream.\n", n_bits);
+			WARNING_LOG("An error occurred while writing %u bits to the stream.", n_bits);
 			return;
 		}
 	}

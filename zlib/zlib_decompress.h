@@ -20,6 +20,7 @@
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * Resources: deflate <https://www.ietf.org/rfc/rfc1951.txt> *
+ *            zlib    <https://www.ietf.org/rfc/rfc1950.txt> *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 // -------------------
@@ -122,10 +123,13 @@ static int get_length(BitStream* bit_stream, unsigned short int value);
 static int get_distance(BitStream* bit_stream, unsigned short int value);
 static int read_uncompressed_data(BitStream* bit_stream, unsigned char** decompressed_data, unsigned int* decompressed_data_length);
 static int decode_dynamic_huffman_tables(BitStream* bit_stream, HFTable* literals_hf, HFTable* distance_hf);
+static void update_adler_crc(unsigned char value, unsigned int* adler_register);
+static int read_zlib_header(BitStream* bit_stream);
 
 /// NOTE: the stream will be always deallocated both in case of failure and success.
 /// 	  Furthermore, the function allocates the returned stream of bytes, so that
 /// 	  once it's on the hand of the caller, it's responsible to manage that memory.
+unsigned char* deflate_inflate(unsigned char* stream, unsigned int size, unsigned int* decompressed_data_length, int* zlib_err);
 unsigned char* zlib_inflate(unsigned char* stream, unsigned int size, unsigned int* decompressed_data_length, int* zlib_err);
 
 /* ---------------------------------------------------------------------------------------------------------- */
@@ -153,14 +157,14 @@ static int generate_codes(HFTable* hf) {
 	bl_count[0] = 0;
     hf -> values = (unsigned short int**) xcomp_calloc(hf -> max_bit_length + 1, sizeof(unsigned short int*));
     if (hf -> values == NULL) {
-		WARNING_LOG("Failed to allocate buffer for hf -> values.\n");
+		WARNING_LOG("Failed to allocate buffer for hf -> values.");
 		return -ZLIB_IO_ERROR;
 	}
 	
 	for (unsigned char i = 1; i <= hf -> max_bit_length; ++i) {
         (hf -> values)[i] = (unsigned short int*) xcomp_calloc(bl_count[i], sizeof(unsigned short int));
 		if ((hf -> values)[i] == NULL) {
-			WARNING_LOG("Failed to allocate buffer for hf -> values[%u].\n", i);
+			WARNING_LOG("Failed to allocate buffer for hf -> values[%u].", i);
 			return -ZLIB_IO_ERROR;
 		}
 	}
@@ -168,13 +172,13 @@ static int generate_codes(HFTable* hf) {
 	// Find the minimum and maximum code values for each bit_length 
     hf -> min_codes = (unsigned short int*) xcomp_calloc(hf -> max_bit_length + 1, sizeof(unsigned short int));
     if (hf -> min_codes == NULL) {
-		WARNING_LOG("Failed to allocate buffer for hf -> min_codes.\n");
+		WARNING_LOG("Failed to allocate buffer for hf -> min_codes.");
 		return -ZLIB_IO_ERROR;
 	}
 	
 	hf -> max_codes = (unsigned short int*) xcomp_calloc(hf -> max_bit_length + 1, sizeof(unsigned short int));
     if (hf -> max_codes == NULL) {
-		WARNING_LOG("Failed to allocate buffer for hf -> max_codes.\n");
+		WARNING_LOG("Failed to allocate buffer for hf -> max_codes.");
 		return -ZLIB_IO_ERROR;
 	}
 
@@ -183,11 +187,13 @@ static int generate_codes(HFTable* hf) {
         (hf -> max_codes)[bits] = (hf -> min_codes)[bits];
     }
 	
-	// Compute the code for each entry, and updating the max_code each time accordingly.
-    // In this way we sort of allocate a code for each entry in order (as lexicographical order is required), as we already know the base for each bit_length (min_code).
+	// Compute the code for each entry, and update the max_code each time accordingly.
+	// In this way we sort of allocate a code for each entry in order (as
+	// lexicographical order is required), as we already know the base for each
+	// bit_length (min_code).
 	unsigned char* values_index = (unsigned char*) xcomp_calloc(hf -> max_bit_length + 1, sizeof(unsigned char));
     if (values_index == NULL) {
-		WARNING_LOG("Failed to allocate buffer for values_index.\n");
+		WARNING_LOG("Failed to allocate buffer for values_index.");
 		return -ZLIB_IO_ERROR;
 	}
 	
@@ -237,14 +243,14 @@ static int decode_hf(BitStream* bit_stream, unsigned short int code, HFTable hf)
 static int decode_lengths(BitStream* bit_stream, HFTable decoder_hf, HFTable* literals_hf, HFTable* distance_hf) {
     literals_hf -> lengths = (unsigned char*) xcomp_calloc(literals_hf -> size, sizeof(unsigned char));
 	if (literals_hf -> lengths == NULL) {
-		WARNING_LOG("Failed to allocate buffer for literals_hf -> lengths.\n");
+		WARNING_LOG("Failed to allocate buffer for literals_hf -> lengths.");
 		return -ZLIB_IO_ERROR;
 	}
 	
 	distance_hf -> lengths = (unsigned char*) xcomp_calloc(distance_hf -> size, sizeof(unsigned char));
     if (distance_hf -> lengths == NULL) {
 		XCOMP_SAFE_FREE(literals_hf -> lengths);
-		WARNING_LOG("Failed to allocate buffer for distance_hf -> lengths.\n");
+		WARNING_LOG("Failed to allocate buffer for distance_hf -> lengths.");
 		return -ZLIB_IO_ERROR;
 	}
 	
@@ -255,7 +261,7 @@ static int decode_lengths(BitStream* bit_stream, HFTable decoder_hf, HFTable* li
 
 		if (value < 0) {
 			XCOMP_MULTI_FREE(literals_hf -> lengths, distance_hf -> lengths);
-			WARNING_LOG("Corrupted encoded lengths.\n");
+			WARNING_LOG("Corrupted encoded lengths.");
 			return value;
 		}
 
@@ -299,7 +305,7 @@ static int decode_lengths(BitStream* bit_stream, HFTable decoder_hf, HFTable* li
                 else (distance_hf -> lengths)[index - literals_hf -> size] = 0;
             }
         } else {
-			WARNING_LOG("Invalid value decoded: %u must be less than 19.\n", value);\
+			WARNING_LOG("Invalid value decoded: %u must be less than 19.", value);\
 			return -ZLIB_CORRUPTED_DATA;
 		}
     }
@@ -311,12 +317,12 @@ static int decode_lengths(BitStream* bit_stream, HFTable decoder_hf, HFTable* li
 static int copy_data(unsigned char** dest, unsigned int* index, unsigned short int length, unsigned short int distance) {
     *dest = (unsigned char*) xcomp_realloc(*dest, sizeof(unsigned char) * ((*index) + length));
 	if (*dest == NULL) {
-		WARNING_LOG("Failed to xcomp_reallocate buffer for dest.\n");
+		WARNING_LOG("Failed to xcomp_reallocate buffer for dest.");
 		return -ZLIB_IO_ERROR;
 	}
 
-	if ((long int) *index - distance < 0) {
-		WARNING_LOG("Invalid distance, which makes buffer pointer negative: %d, (index: %u, distance: %u)\n", *index - distance, *index, distance);
+	if (*index < distance) {
+		WARNING_LOG("Invalid distance, which makes buffer pointer negative: %d, (index: %u, distance: %u)", *index - distance, *index, distance);
 		return -ZLIB_CORRUPTED_DATA;
 	}
 
@@ -358,10 +364,10 @@ static int read_uncompressed_data(BitStream* bit_stream, unsigned char** decompr
 	unsigned short int check = ((length ^ length_c) + 1) & 0xFFFF;
 
     if (check) {
-		WARNING_LOG("Invalid checksum: ((0x%X ^ 0x%X) + 1 = 0x%X) which is not equal to 0.\n", length, length_c, check);
+		WARNING_LOG("Corrupted length: ((0x%X ^ 0x%X) + 1 = 0x%X) which is not equal to 0.", length, length_c, check);
 		return -ZLIB_INVALID_LEN_CHECKSUM;
 	} else if (length + bit_stream -> byte_pos > bit_stream -> size) {
-		WARNING_LOG("Invalid length: %u would make bitstream pointer read out of bound.\n", length);
+		WARNING_LOG("Invalid length: %u would make bitstream pointer read out of bound.", length);
 		PRINT_BIT_STREAM_INFO(bit_stream);
 		return -ZLIB_CORRUPTED_DATA;
 	}
@@ -369,7 +375,7 @@ static int read_uncompressed_data(BitStream* bit_stream, unsigned char** decompr
 	// Read length bytes from the stream
     *decompressed_data = (unsigned char*) xcomp_realloc(*decompressed_data, sizeof(unsigned char) * (*decompressed_data_length + length));
 	if (mem_cpy(*decompressed_data + *decompressed_data_length, bitstream_read_bytes(bit_stream, sizeof(unsigned char), length), sizeof(unsigned char) * length) == NULL) {
-		WARNING_LOG("Failed to xcomp_reallocate buffer for decompressed data.\n");
+		WARNING_LOG("Failed to xcomp_reallocate buffer for decompressed data.");
 		return -ZLIB_IO_ERROR;
 	}
 
@@ -419,7 +425,7 @@ static int decode_dynamic_huffman_tables(BitStream* bit_stream, HFTable* literal
     const unsigned char order_of_code_lengths[] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
     decoder_hf.lengths = (unsigned char*) xcomp_calloc(HF_TABLE_SIZE, sizeof(unsigned char));
 	if (decoder_hf.lengths == NULL) {
-		WARNING_LOG("Failed to allocate buffer for decoder_hf lengths.\n");
+		WARNING_LOG("Failed to allocate buffer for decoder_hf lengths.");
 		return -ZLIB_IO_ERROR;
 	}
 
@@ -434,14 +440,14 @@ static int decode_dynamic_huffman_tables(BitStream* bit_stream, HFTable* literal
     int err = 0;
     if ((err = generate_codes(&decoder_hf)) < 0) {
 		deallocate_hf_table(&decoder_hf);
-		WARNING_LOG("An error occurred while generating the codes for the decoder_hf table.\n");
+		WARNING_LOG("An error occurred while generating the codes for the decoder_hf table.");
 		return err;
 	}
 
 	// Decode the bit_lengths for both the Huffman Trees
 	if ((err = decode_lengths(bit_stream, decoder_hf, literals_hf, distance_hf)) < 0) {
 		deallocate_hf_table(&decoder_hf);
-		WARNING_LOG("An error occurred while decoding the lengths.\n");
+		WARNING_LOG("An error occurred while decoding the lengths.");
 		return err;
 	}
 
@@ -452,7 +458,7 @@ static int decode_dynamic_huffman_tables(BitStream* bit_stream, HFTable* literal
 		literals_hf -> lengths = xcomp_realloc(literals_hf -> lengths, sizeof(unsigned char) * HF_LITERALS_SIZE);
 		if (literals_hf -> lengths == NULL) {
 			XCOMP_SAFE_FREE(distance_hf -> lengths);
-			WARNING_LOG("Failed to xcomp_reallocate the buffer for literals_hf -> lenghts.\n");
+			WARNING_LOG("Failed to xcomp_reallocate the buffer for literals_hf -> lenghts.");
 			return -ZLIB_IO_ERROR;
 		}
 
@@ -464,7 +470,7 @@ static int decode_dynamic_huffman_tables(BitStream* bit_stream, HFTable* literal
 		distance_hf -> lengths = xcomp_realloc(distance_hf -> lengths, sizeof(unsigned char) * HF_DISTANCE_SIZE);
 		if (distance_hf -> lengths == NULL) {
 			XCOMP_SAFE_FREE(literals_hf -> lengths);
-			WARNING_LOG("Failed to xcomp_reallocate the buffer for distance_hf -> lenghts.\n");
+			WARNING_LOG("Failed to xcomp_reallocate the buffer for distance_hf -> lenghts.");
 			return -ZLIB_IO_ERROR;
 		}
 
@@ -475,7 +481,7 @@ static int decode_dynamic_huffman_tables(BitStream* bit_stream, HFTable* literal
     if ((err = generate_codes(literals_hf)) < 0) {
 		XCOMP_SAFE_FREE(distance_hf -> lengths);
 		deallocate_hf_table(literals_hf);
-		WARNING_LOG("An error occurred while generating the codes for the literals_hf table.\n");
+		WARNING_LOG("An error occurred while generating the codes for the literals_hf table.");
 		return err;
 	}
 	
@@ -483,7 +489,7 @@ static int decode_dynamic_huffman_tables(BitStream* bit_stream, HFTable* literal
 
 	if ((err = generate_codes(distance_hf)) < 0) {
 		DEALLOCATE_TABLES(literals_hf, distance_hf);
-		WARNING_LOG("An error occurred while generating the codes for the distance_hf table.\n");
+		WARNING_LOG("An error occurred while generating the codes for the distance_hf table.");
 		return err;
 	}
 
@@ -500,7 +506,7 @@ static int decode_compressed_block(BType compression_method, BitStream* bit_stre
 		FIXED_LITERALS_HF(literals_hf);
 		FIXED_DISTANCE_HF(distance_hf);
 	} else if ((err = decode_dynamic_huffman_tables(bit_stream, &literals_hf, &distance_hf))) {
-		WARNING_LOG("An error occurred during dynamic HF table decoding.\n");
+		WARNING_LOG("An error occurred during dynamic HF table decoding.");
 		return err;
 	}
 	
@@ -515,7 +521,7 @@ static int decode_compressed_block(BType compression_method, BitStream* bit_stre
 		// Decode the literal/length value
 		if ((decoded_value = decode_hf(bit_stream, code, literals_hf)) < 0) {
 			DEALLOCATE_TABLES(&literals_hf, &distance_hf);
-			WARNING_LOG("An error occurred while decoding the code.\n");
+			WARNING_LOG("An error occurred while decoding the code.");
 			return decoded_value;
 		}
 		
@@ -524,15 +530,15 @@ static int decode_compressed_block(BType compression_method, BitStream* bit_stre
 			*decompressed_data = (unsigned char*) xcomp_realloc(*decompressed_data, sizeof(unsigned char) * (*decompressed_data_length + 1));
 			if (*decompressed_data == NULL) {
 				DEALLOCATE_TABLES(&literals_hf, &distance_hf);
-				WARNING_LOG("Failed to xcomp_reallocate buffer for decompressed data.\n");
+				WARNING_LOG("Failed to xcomp_reallocate buffer for decompressed data.");
 				return -ZLIB_IO_ERROR;
 			}
 			
 			(*decompressed_data)[*decompressed_data_length] = decoded_value;
 			(*decompressed_data_length)++;
-		} else if (decoded_value == 256) {
-			break;
-		} else {
+		} 
+		else if (decoded_value == 256) break;
+		else {
 			unsigned short int length = get_length(bit_stream, decoded_value);
 			int distance_code = bitstream_read_next_bit(bit_stream);
 			BITSTREAM_SAFE_CHECK(bit_stream, &literals_hf, &distance_hf);
@@ -540,7 +546,7 @@ static int decode_compressed_block(BType compression_method, BitStream* bit_stre
 			// Decode the distance value
 			if ((decoded_distance = decode_hf(bit_stream, distance_code, distance_hf)) < 0) {
 				DEALLOCATE_TABLES(&literals_hf, &distance_hf);
-				WARNING_LOG("An error occurred while decoding the code.\n");
+				WARNING_LOG("An error occurred while decoding the code.");
 				return decoded_value;
 			}
 			
@@ -548,7 +554,7 @@ static int decode_compressed_block(BType compression_method, BitStream* bit_stre
 			unsigned short int distance = get_distance(bit_stream, decoded_distance);
 			if ((err = copy_data(decompressed_data, decompressed_data_length, length, distance)) < 0) {
 				DEALLOCATE_TABLES(&literals_hf, &distance_hf);
-				WARNING_LOG("An error occurred while copying data from the decoded data.\n");
+				WARNING_LOG("An error occurred while copying data from the decoded data.");
 				return err;
 			}
 		}
@@ -559,54 +565,139 @@ static int decode_compressed_block(BType compression_method, BitStream* bit_stre
 	return ZLIB_NO_ERROR;
 }
 
-unsigned char* zlib_inflate(unsigned char* stream, unsigned int size, unsigned int* decompressed_data_length, int* zlib_err) {
-    // Initialize decompressed data
-    unsigned char* decompressed_data = (unsigned char*) xcomp_calloc(1, sizeof(unsigned char));
-    if (decompressed_data == NULL) {
-		XCOMP_SAFE_FREE(stream);
-		*zlib_err = -ZLIB_IO_ERROR;
-		return ((unsigned char*) "Failed to allocate buffer for decompressed_data.\n");
+static void update_adler_crc(unsigned char value, unsigned int* adler_register) {
+    const unsigned int prime = 65521L;
+    unsigned int low = (*adler_register) & 0X0000FFFFL;
+    unsigned int high = ((*adler_register) >> 16) & 0X0000FFFFL;
+    low = (low + value) % prime;
+    high = (low + high) % prime;
+    *adler_register = (high << 16) | low ;
+    return;
+}
+
+static int read_zlib_header(BitStream* bit_stream) {
+	unsigned char compress_data = SAFE_BYTE_READ_WITH_CAST(bit_stream, sizeof(unsigned char), 1, unsigned char, compress_data, 0);
+    unsigned char flags = SAFE_BYTE_READ_WITH_CAST(bit_stream, sizeof(unsigned char), 1, unsigned char, flags, 0);
+    
+	unsigned char compression_method = compress_data & 0x0F;
+    unsigned char window_size = (compress_data & 0xF0) >> 4;
+    unsigned char preset_dictionary = ((flags & 0x20) >> 5) & 0x01;
+    unsigned char compression_level = ((flags & 0xC0) >> 6) & 0x03;
+
+	DEBUG_LOG("-- ZLIB HEADER --");
+    DEBUG_LOG("compression method: %u", compression_method);
+    DEBUG_LOG("window size:        %u", window_size);
+    DEBUG_LOG("preset dictionary:  %u", preset_dictionary);
+    DEBUG_LOG("compression level:  %u", compression_level);
+	DEBUG_LOG("-----------------");
+
+    if (compression_method != 8) {
+		return -ZLIB_INVALID_COMPRESSION_METHOD;
+	} else if (window_size > 7) {
+		return -ZLIB_INVALID_WINDOW_SIZE;
+	} else if (preset_dictionary) {
+		return -ZLIB_DICTIONARY_NOT_SUPPORTED;
+	} else if ((compress_data * 256 + flags) % 31 != 0) {
+		return -ZLIB_INVALID_CHECKSUM;
 	}
 
-	BitStream bit_stream = CREATE_BIT_STREAM(stream, size);
-	*decompressed_data_length = 0;
+    return 0;
+}
 
+static unsigned char* zlib_raw_inflate(BitStream* bit_stream, unsigned int* decompressed_data_length, int* zlib_err) {
     unsigned char final = 0;
 	BType compression_method = 0;
 	unsigned int block_cnt = 0;
 	unsigned int old_decompressed_size = 0;
+	
+    // Initialize decompressed data
+    unsigned char* decompressed_data = (unsigned char*) xcomp_calloc(1, sizeof(unsigned char));
+    if (decompressed_data == NULL) {
+		deallocate_bit_stream(bit_stream);
+		*zlib_err = -ZLIB_IO_ERROR;
+		return ((unsigned char*) "Failed to allocate buffer for decompressed_data.\n");
+	}
+
 	while (!final) {
 		// Read header bits
-		READ_BLOCK_HEADER(&bit_stream, *zlib_err, final, compression_method);
+		READ_BLOCK_HEADER(bit_stream, *zlib_err, final, compression_method);
 		block_cnt++;
 		
-		DEBUG_LOG("Block %u: is_final: %u, compression_method: '%s', ", block_cnt, final, btypes_str[compression_method]);
+		DEBUG_LOG("%sBlock %u: compression_method: '%s'", final ? "FINAL " : "", block_cnt, btypes_str[compression_method]);
 		
         if (compression_method == NO_COMPRESSION) {
-			if ((*zlib_err = read_uncompressed_data(&bit_stream, &decompressed_data, decompressed_data_length)) < 0) {
-				XCOMP_MULTI_FREE(stream, decompressed_data);
+			if ((*zlib_err = read_uncompressed_data(bit_stream, &decompressed_data, decompressed_data_length)) < 0) {
+				deallocate_bit_stream(bit_stream);
+				XCOMP_SAFE_FREE(decompressed_data);
 				return ((unsigned char*) "corrupted compressed block\n");
             }
-            continue;
+			
+			DEBUG_LOG("Block decompressed size: %u", *decompressed_data_length - old_decompressed_size);
+			old_decompressed_size = *decompressed_data_length;
+            
+			continue;
         } else if (compression_method == RESERVED) {
-			XCOMP_MULTI_FREE(stream, decompressed_data);
+			deallocate_bit_stream(bit_stream);
+			XCOMP_SAFE_FREE(decompressed_data);
             return ((unsigned char*) "invalid compression type\n");
         } 
 		
         // Decode compressed data block
-		if ((*zlib_err = decode_compressed_block(compression_method, &bit_stream, &decompressed_data, decompressed_data_length)) < 0) {
-			XCOMP_MULTI_FREE(stream, decompressed_data);
+		if ((*zlib_err = decode_compressed_block(compression_method, bit_stream, &decompressed_data, decompressed_data_length)) < 0) {
+			deallocate_bit_stream(bit_stream);
+			XCOMP_SAFE_FREE(decompressed_data);
 			return ((unsigned char*) "An error occurred while decompressing the block.\n");
 		}
 
-		printf("decompressed_size: %u\n", *decompressed_data_length - old_decompressed_size);
+		DEBUG_LOG("Block decompressed size: %u", *decompressed_data_length - old_decompressed_size);
 		old_decompressed_size = *decompressed_data_length;
 	}
-		
+	
+	*zlib_err = ZLIB_NO_ERROR;
+	deallocate_bit_stream(bit_stream);
+
+	return decompressed_data;
+}
+
+// Decode Raw DEFLATE compressed data
+unsigned char* deflate_inflate(unsigned char* stream, unsigned int size, unsigned int* decompressed_data_length, int* zlib_err) {
+	BitStream bit_stream = CREATE_BIT_STREAM(stream, size);
+	*decompressed_data_length = 0;
+	
+	unsigned char* decompressed_data = zlib_raw_inflate(&bit_stream, decompressed_data_length, zlib_err);
+    return decompressed_data;
+}
+
+unsigned char* zlib_inflate(unsigned char* stream, unsigned int size, unsigned int* decompressed_data_length, int* zlib_err) {
+	BitStream bit_stream = CREATE_BIT_STREAM(stream, size - 4);
+	*decompressed_data_length = 0;
+    
+	*zlib_err = read_zlib_header(&bit_stream);
+    if (*zlib_err) return ((unsigned char*) "Invalid ZLIB Header");
+
+	unsigned char* decompressed_data = zlib_raw_inflate(&bit_stream, decompressed_data_length, zlib_err);
+	if (*zlib_err) return decompressed_data;
+
+    // Read the ADLER-CRC
+    unsigned int adler_crc = *XCOMP_CAST_PTR(stream + size - 4, unsigned int);
+    unsigned int adler_register = 1;
+
+    // Calculate the ADLER-CRC of the blocks
+    for (unsigned int i = 0; i < (*decompressed_data_length); ++i) {
+        update_adler_crc(decompressed_data[i], &adler_register);
+    }
+
+    if (adler_crc != adler_register) {
+        *zlib_err = -ZLIB_INVALID_ADLER_CHECKSUM;
+        XCOMP_SAFE_FREE(decompressed_data);
+        DEBUG_LOG("adler_register: 0x%X, adler_crc: 0x%X", adler_register, adler_crc);
+        return ((unsigned char*) "corrupted compressed data blocks");
+    }
+
 	*zlib_err = ZLIB_NO_ERROR;
 	XCOMP_SAFE_FREE(stream);
-
-    return decompressed_data;
+	
+	return decompressed_data; 
 }
 
 #endif //_ZLIB_DECOMPRESS_H_

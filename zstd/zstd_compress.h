@@ -45,7 +45,7 @@ unsigned char* zstd_deflate(unsigned char* stream, unsigned int size, unsigned i
 
 /* -------------------------------------------------------------------------------------------------------- */
 
-int compress_block(void) {
+int zstd_compress_block(void) {
 	return -ZSTD_TODO;
 }
 
@@ -77,7 +77,7 @@ int generate_block(BitStream* compressed_bitstream, BitStream* bit_stream, const
 		}
 	} else if (block_header.block_type == COMPRESSED_BLOCK) {
 		int err = 0;
-		if ((err = compress_block()) < 0) {
+		if ((err = zstd_compress_block()) < 0) {
 			printf("Failed to compress the block.\n");
 			return err;
 		}
