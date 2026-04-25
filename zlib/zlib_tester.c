@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
 	
 	const char* file_path = argv[1];
 	const char* out_file_path = (argc > 2) ? argv[2] : NULL;
-	DEBUG_LOG("Decoding '%s' to '%s'...\n", file_path, out_file_path == NULL ? "stdin" : out_file_path);
+	DEBUG_LOG("Decoding '%s' to '%s'...", file_path, out_file_path == NULL ? "stdin" : out_file_path);
 
 	FILE* test_file = NULL;
 	if ((test_file = fopen(file_path, "rb")) == NULL) {
@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
 	long file_size = ftell(test_file);
 	fseek(test_file, 0, SEEK_SET);
 
-	DEBUG_LOG("File size: %lu\n", file_size);
+	DEBUG_LOG("File size: %lu", file_size);
 	
 	size_t file_err = 0;
 	unsigned char* test_data = (unsigned char*) xcomp_calloc(file_size, sizeof(unsigned char));
@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
 	unsigned int zlib_decompressed_data_length = 0;
 	unsigned char* zlib_decompressed_data = zlib_inflate((unsigned char*) test_data, file_size, &zlib_decompressed_data_length, &err);
 	if (err) {
-		printf(COLOR_STR("ZLIB_ERROR::%s: ", RED) "%s", zlib_errors_str[-err], zlib_decompressed_data);
+		printf(COLOR_STR("ZLIB_ERROR::%s: ", RED) "%s\n", zlib_errors_str[-err], zlib_decompressed_data);
 		return err;
 	} 
 	

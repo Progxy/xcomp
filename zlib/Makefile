@@ -1,4 +1,4 @@
-FLAGS = -std=gnu11 -Wall -Wextra -pedantic -ggdb
+FLAGS = -std=gnu11 -Wall -Wextra -pedantic -ggdb -fsanitize=undefined -fsanitize=address
 DEFINITIONS = -D_DEBUG
 
 test: zlib_tester
@@ -11,5 +11,5 @@ deflate_test: deflate_test.c xcomp_zlib.h
 	gcc $(FLAGS) $(DEFINITIONS) $< -o $@
 
 zlib_tester: zlib_tester.c xcomp_zlib.h 	
-	gcc $(FLAGS) $< -o $@
+	gcc $(FLAGS) $(DEFINITIONS) $< -o $@
 

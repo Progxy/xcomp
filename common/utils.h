@@ -35,11 +35,11 @@
 #define TODO_COLOR    CYAN
 
 #define COLOR_STR(str, COLOR) COLOR str RESET_COLOR
-#define WARNING_LOG(format, ...) printf(COLOR_STR("WARNING:" __FILE__ ":%u: ", BRIGHT_YELLOW) format, __LINE__, ##__VA_ARGS__)
+#define WARNING_LOG(format, ...) printf(COLOR_STR("WARNING:" __FILE__ ":%u: ", BRIGHT_YELLOW) format "\n", __LINE__, ##__VA_ARGS__)
 #define TODO(msg) printf(COLOR_STR("TODO: " __FILE__ ":%u: ", TODO_COLOR) msg "\n", __LINE__), assert(FALSE)
 
 #ifdef _DEBUG
-	#define DEBUG_LOG(format, ...) printf(COLOR_STR("DEBUG:" __FILE__ ":%u: ", DEBUG_COLOR) format, __LINE__, ##__VA_ARGS__)
+	#define DEBUG_LOG(format, ...) printf(COLOR_STR("DEBUG:" __FILE__ ":%u: ", DEBUG_COLOR) format "\n", __LINE__, ##__VA_ARGS__)
 #else 
     #define DEBUG_LOG(...)
 #endif //_DEBUG
@@ -128,15 +128,15 @@
 #define mem_set(ptr, value, size)    mem_set_var(ptr, value, size, sizeof(unsigned char))
 #define mem_set_32(ptr, value, size) mem_set_var(ptr, value, size, sizeof(unsigned int))
 #define mem_set_64(ptr, value, size) mem_set_var(ptr, value, size, sizeof(unsigned long long int))
-static void mem_set_var(void* ptr, int value, size_t size, size_t val_size);
+UNUSED_FUNCTION static void mem_set_var(void* ptr, int value, size_t size, size_t val_size);
 static void* mem_cpy(void* dest, const void* src, size_t size);
-static void mem_move(void* dest, const void* src, size_t size);
+UNUSED_FUNCTION static void mem_move(void* dest, const void* src, size_t size);
 UNUSED_FUNCTION static int mem_n_cmp(const void* ptr1, const void* ptr2, size_t n);
 UNUSED_FUNCTION static size_t str_len(const char* str);
 UNUSED_FUNCTION static int str_n_cmp(const char* str1, const char* str2, size_t n);
 
 /* -------------------------------------------------------------------------------------------------------- */
-static void mem_set_var(void* ptr, int value, size_t size, size_t val_size) {
+UNUSED_FUNCTION static void mem_set_var(void* ptr, int value, size_t size, size_t val_size) {
 	if (ptr == NULL) return;
 	for (size_t i = 0; i < size; ++i) XCOMP_CAST_PTR(ptr, unsigned char)[i] = XCOMP_CAST_PTR(&value, unsigned char)[i % val_size]; 
 	return;
@@ -148,7 +148,7 @@ static void* mem_cpy(void* dest, const void* src, size_t size) {
 	return dest;
 }
 
-static void mem_move(void* dest, const void* src, size_t size) {
+UNUSED_FUNCTION static void mem_move(void* dest, const void* src, size_t size) {
     if (dest == NULL || src == NULL || size == 0) return;
     
 	unsigned char* temp = (unsigned char*) xcomp_calloc(size, sizeof(unsigned char));

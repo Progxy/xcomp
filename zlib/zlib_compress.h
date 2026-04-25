@@ -22,16 +22,13 @@
  * Resources: deflate <https://www.ietf.org/rfc/rfc1951.txt> *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-// TODO: Possibly create hf_tree struct to contain all the length - size couples, generally reduce the size of functions' declaration
+// TODO: Possibly create hf_tree struct to contain all the length - size
+//       couples, generally reduce the size of functions' declaration
 // TODO: Write better comments and error messages
 
 // -----------------
 //  Constant Values
 // -----------------
-#define BLOCK_DELIMITER 256
-#define MAX_HF_SIZE     288 
-#define WINDOW_SIZE     0x7FFF // 32KB window
-
 #define DEALLOCATE_TREES(...) 																	\
 	do {																						\
 		HFTree* hf_trees[] = { NULL, ##__VA_ARGS__ };							 				\
