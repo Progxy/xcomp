@@ -46,7 +46,7 @@ int main(void) {
 		return 1;
 	}
 	
-	DEBUG_LOG("Zlib decompressed data: '%.*s'\n", zlib_decompressed_data_length, zlib_decompressed_data);
+	DEBUG_LOG("Zlib decompressed data(%u): '%.*s'\n", zlib_decompressed_data_length, zlib_decompressed_data_length, zlib_decompressed_data);
 
 	xcomp_free(zlib_decompressed_data);
 

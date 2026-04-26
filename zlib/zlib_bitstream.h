@@ -29,7 +29,9 @@
 //  Structs
 // ---------
 typedef enum {
-   	BITSTREAM_IO_ERROR = 1
+   	BITSTREAM_IO_ERROR = 1,
+	BITSTREAM_OOB_READ_ERROR,
+	BITSTREAM_REALLOC_ERROR
 } BitStreamError;
 
 typedef struct PACKED_STRUCT BitStream {
@@ -41,12 +43,6 @@ typedef struct PACKED_STRUCT BitStream {
 } BitStream;
 
 /* ---------------------------------------------------------------------------------------------------------- */
-// ------------------------
-//  Functions Declarations
-// ------------------------
-
-/* ---------------------------------------------------------------------------------------------------------- */
-
 static void print_bit_stream_info(const char* name, const char* file, const int line, BitStream* bit_stream) {
 	printf(" -- BitStream %s info ( at %s:%d) --\n", name, file, line);
 	printf("  -> byte_pos: %u\n", bit_stream -> byte_pos);
@@ -65,7 +61,7 @@ static unsigned char bitstream_read_next_byte(BitStream* bit_stream) {
 	
    	bit_stream -> byte_pos += (bit_stream -> bit_pos > 0 && bit_stream -> bit_pos < 7);	
 	if (bit_stream -> byte_pos >= bit_stream -> size) {
-		bit_stream -> error = 1;
+		bit_stream -> error = BITSTREAM_OOB_READ_ERROR;
 		WARNING_LOG("Bitstream out of bounds byte read");
 		PRINT_BIT_STREAM_INFO(bit_stream);
 		return 0;
@@ -84,7 +80,7 @@ static void* bitstream_read_bytes(BitStream* bit_stream, unsigned int size, unsi
 	
    	bit_stream -> byte_pos += (bit_stream -> bit_pos > 0 && bit_stream -> bit_pos < 7);	
 	if (bit_stream -> byte_pos + tot_size > bit_stream -> size) {
-		bit_stream -> error = 1;
+		bit_stream -> error = BITSTREAM_OOB_READ_ERROR;
 		WARNING_LOG("Bitstream out of bounds bytes read, size: %u, nmemb: %u.", size, nmemb); 
 		PRINT_BIT_STREAM_INFO(bit_stream);
 		return NULL;
@@ -100,7 +96,7 @@ static void* bitstream_read_bytes(BitStream* bit_stream, unsigned int size, unsi
 static unsigned char bitstream_read_next_bit(BitStream* bit_stream) {
     if (bit_stream -> error) return 0;
 	else if (bit_stream -> byte_pos >= bit_stream -> size) {
-		bit_stream -> error = 1;
+		bit_stream -> error = BITSTREAM_OOB_READ_ERROR;
 		WARNING_LOG("Bitstream out of bounds bit read");
 		PRINT_BIT_STREAM_INFO(bit_stream);
 		return 0;
@@ -108,32 +104,91 @@ static unsigned char bitstream_read_next_bit(BitStream* bit_stream) {
 
 	unsigned char bit_value = ((bit_stream -> stream)[bit_stream -> byte_pos] >> (bit_stream -> bit_pos)) & 1;
 	(bit_stream -> bit_pos)++;
-	
+
 	if (bit_stream -> bit_pos > 7) bitstream_read_next_byte(bit_stream);
 
     return bit_value;
 }
 
-static unsigned char bitstream_read_bits(BitStream* bit_stream, unsigned int n_bits, void* data) {
-	if (n_bits > sizeof(unsigned long long int) * 8) {
-		bit_stream -> error = 1;
-		WARNING_LOG("Tried to read more than %lu bits: %u", sizeof(unsigned long long int) * 8, n_bits);
-		return 1;
-	}
-
+static void bitstream_read_bits(BitStream* bit_stream, unsigned int n_bits, void* data) {
     for (unsigned int i = 0, j = 0; i < n_bits; ++i) {
     	j += (i % 8 == 0) && (i != 0); 
 		XCOMP_CAST_PTR(data, unsigned char)[j] += bitstream_read_next_bit(bit_stream) << (i % 8);
-		if (bit_stream -> error) return 1;
+		if (bit_stream -> error) return;
+	}
+	return;
+}
+
+static void bitstream_resize(BitStream* bit_stream, long long int size) {
+	if (bit_stream -> error) return;
+	
+	bit_stream -> size += size;
+	bit_stream -> stream = realloc(bit_stream -> stream, bit_stream -> size);
+	if (bit_stream -> stream == NULL) {
+		bit_stream -> error = BITSTREAM_REALLOC_ERROR;
+		WARNING_LOG("Bitstream failed to reallocate the stream buffer (change %lld).", size);
+		PRINT_BIT_STREAM_INFO(bit_stream);
+		return;
 	}
 
-    return 0;
+	return;
+}
+
+static void bitstream_write_byte(BitStream* bit_stream, unsigned char val) {
+   	bit_stream -> byte_pos += (bit_stream -> bit_pos > 0 && bit_stream -> bit_pos < 7);	
+	if (bit_stream -> byte_pos >= bit_stream -> size) bitstream_resize(bit_stream, bit_stream -> byte_pos - bit_stream -> size + 1);
+	if (bit_stream -> error) return;
+
+	bit_stream -> bit_pos = 0;
+	(bit_stream -> stream)[(bit_stream -> byte_pos)++] = val;
+	
+	return;
+}
+
+static void bitstream_write_bytes(BitStream* bit_stream, const unsigned int size, const unsigned nmemb, const void* data) {
+	const unsigned int tot_size = size * nmemb;
+	bit_stream -> byte_pos += (bit_stream -> bit_pos > 0 && bit_stream -> bit_pos < 7);	
+	if (bit_stream -> byte_pos + tot_size >= bit_stream -> size) {
+		bitstream_resize(bit_stream, bit_stream -> byte_pos + tot_size - bit_stream -> size + 1);
+	}
+	
+	if (bit_stream -> error) return;
+	
+	bit_stream -> bit_pos = 0;
+	mem_cpy(bit_stream -> stream + bit_stream -> byte_pos, data, tot_size);
+	bit_stream -> byte_pos += tot_size;
+
+	return;
+}
+
+static void bitstream_write_bit(BitStream* bit_stream, const unsigned char bit_val) {
+	if ((bit_stream -> byte_pos == bit_stream -> size) || (bit_stream -> bit_pos > 7)) {
+		bitstream_resize(bit_stream, 1);
+		(bit_stream -> byte_pos) += (bit_stream -> bit_pos > 7);
+	} 
+	
+	if (bit_stream -> error) return;
+	
+	(bit_stream -> stream)[bit_stream -> byte_pos] = bit_val << (bit_stream -> bit_pos);
+	(bit_stream -> bit_pos)++;
+
+	return;
+}
+
+static void bitstream_write_bits(BitStream* bit_stream, const unsigned int n_bits, const void* data) {
+    for (unsigned int i = 0, j = 0; i < n_bits; ++i) {
+    	j += (i % 8 == 0) && (i != 0); 
+		const unsigned char bit_val = (XCOMP_CAST_PTR(data, unsigned char)[j] >> (i % 8)) & 1;
+		bitstream_write_bit(bit_stream, bit_val);
+		if (bit_stream -> error) return;
+	}
+	return;
 }
 
 UNUSED_FUNCTION static void skip_to_next_byte(BitStream* bit_stream) {
 	if (bit_stream -> error) return;
 	else if (bit_stream -> byte_pos >= bit_stream -> size) {
-		bit_stream -> error = 1;
+		bit_stream -> error = BITSTREAM_OOB_READ_ERROR;
 		WARNING_LOG("Bitstream out of bound skip.");
 		return;
 	}

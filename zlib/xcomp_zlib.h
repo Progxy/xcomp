@@ -23,12 +23,13 @@
 //  Enums
 // -------
 typedef enum {
-	WINDOW_SIZE      = 0x8000,
-	HF_LITERALS_SIZE = 286,
-	HF_DISTANCE_SIZE = 30,
-	HF_TABLE_SIZE    = 19,
-	BLOCK_DELIMITER  = 256,
-	MAX_HF_SIZE      = 288,
+	WINDOW_SIZE                     = 0x8000,
+	HF_LITERALS_SIZE                = 286,
+	HF_DISTANCE_SIZE                = 30,
+	HF_TABLE_SIZE                   = 19,
+	BLOCK_DELIMITER                 = 256,
+	MAX_HF_SIZE                     = 288,
+	FIXED_HF_LITERAL_MAX_BIT_LENGTH = 9
 } ZLIBConstants;
 
 typedef enum PACKED_STRUCT ZlibError {
@@ -78,11 +79,10 @@ static const char* btypes_str[] = {
 };
 
 #ifdef _XCOMP_BITSTREAM_
-/* #	include "../common/bitstream.h" */
 #	include "./zlib_bitstream.h"
 #endif //_XCOMP_BITSTREAM_
 
-/* #include "./zlib_compress.h" */
+#include "./zlib_compress.h"
 #include "./zlib_decompress.h"
 
 #endif // _XCOMP_ZLIB_H_
