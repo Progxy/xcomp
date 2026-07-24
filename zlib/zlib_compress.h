@@ -26,37 +26,23 @@
 //       couples, generally reduce the size of functions' declaration
 // TODO: Write better comments and error messages
 
-// -----------------
-//  Constant Values
-// -----------------
-#define DEALLOCATE_TREES(...) 																	\
-	do {																						\
-		HFTree* hf_trees[] = { NULL, ##__VA_ARGS__ };							 				\
-		for (unsigned int i = 1; i < XCOMP_ARR_SIZE(hf_trees); ++i) deallocate_hf_tree(hf_trees[i]);	\
-	} while (FALSE)
-
-#define CREATE_CALLBACK(...) \
-	do {					 \
-		__VA_ARGS__;		 \
-	} while (FALSE)
-
 /* -------------------------------------------------------------------------------------------------------- */
 // ------------------
 //  Static variables
 // ------------------
-static const unsigned short int fixed_hf_distances_table[] = {
+static const unsigned short int fhf_dist_values[] = {
 	0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE,
 	0xF, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A,
 	0x1B, 0x1C, 0x1D, 0x1E, 0x1F
 };
 
-static const unsigned char fixed_hf_distances_lengths[] = {
+static const unsigned char fhf_dist_lengths[] = {
 	0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5,
 	0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5,
 	0x5, 0x5
 };
 
-static const unsigned short int fixed_hf_literals_table[] = {
+static const unsigned short int fhf_lit_values[] = {
 	0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B,
 	0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,
 	0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52, 0x53,
@@ -85,7 +71,7 @@ static const unsigned short int fixed_hf_literals_table[] = {
 	0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7
 };
 
-static const unsigned char fixed_hf_literals_lengths[] = {
+static const unsigned char fhf_lit_lengths[] = {
 	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
 	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
 	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
@@ -108,149 +94,181 @@ static const unsigned char fixed_hf_literals_lengths[] = {
 	0x8, 0x8, 0x8
 };	
 
-#define FIXED_LITERALS_TREE(hf) 								\
-	hf.table = (unsigned short int*) fixed_hf_literals_table; 	\
-	hf.lengths = (unsigned char*) fixed_hf_literals_lengths;	\
-	hf.size = HF_LITERALS_SIZE;									\
-	hf.is_fixed = TRUE;
-
-#define FIXED_DISTANCE_TREE(hf) 								\
-	hf.table = (unsigned short int*) fixed_hf_distances_table;	\
-	hf.lengths = (unsigned char*) fixed_hf_distances_lengths;	\
-	hf.size = HF_DISTANCE_SIZE;									\
-	hf.is_fixed = TRUE;
-
 /* -------------------------------------------------------------------------------------------------------- */
 // ---------
 //  Structs
 // ---------
-typedef struct Match {
+// TODO: Use the following
+/* typedef struct { */
+/* 	unsigned short int* literal; */
+/* 	unsigned char*      distance; */
+/* 	unsigned char*      length_diff; */
+/* 	unsigned short int* distance_diff; */
+/* 	unsigned int cnt; */
+/* } Match; */
+
+typedef struct {
 	unsigned short int literal;
-	unsigned char distance;
-	unsigned char length_diff;
+	unsigned char      distance;
+	unsigned char      length_diff;
 	unsigned short int distance_diff;
 } Match;
 
-typedef struct HFNode {
+typedef struct {
+	Match* matches;
+	unsigned int cnt;
+} Matches;
+
+typedef struct {
+	unsigned char* values;
+	unsigned char* repeat_cnts;
+	unsigned int cnt;
+} RLEStream;
+
+typedef struct {
     unsigned short int symbol;
     unsigned int freq;
 } HFNode;
 
-typedef struct RLEStream {
-	unsigned char value;
-	unsigned char repeat_cnt;
-} RLEStream;
-
-typedef struct HFTree {
+typedef struct {
+	unsigned short int* values;
 	unsigned char* lengths;
-	unsigned short int* table;
 	unsigned short int size;
-	unsigned char is_fixed;
 } HFTree;
 
 /* -------------------------------------------------------------------------------------------------------- */
 // ------------------------
 //  Functions Declarations
 // ------------------------
-static int length_distance_encoding(const unsigned char* data_stream, unsigned int data_stream_size, Match** distance_encoding, unsigned int* distance_encoding_cnt);
-static void update_hf_nodes(HFNode new_node, HFNode* hf_nodes, unsigned int hf_nodes_cnt);
-static int build_hf_table(HFTree* hf_tree);
-static int generate_hf_tree(unsigned short int* data_stream, unsigned int data_stream_size, HFTree* hf_tree);
-static int rle_encoding(RLEStream** rle_encoded, unsigned short int* rle_encoded_size, HFTree hf_literals, HFTree hf_distances);
-static int generate_hf_trees(Match* distance_encoded, unsigned int distance_encoded_size, BitStream* buffer, HFTree* hf_literals, HFTree* hf_distances);
-static int hf_encode_block(HFTree hf_literals, HFTree hf_distances, Match* distance_encoding, unsigned int distance_encoding_cnt, BitStream* buffer);
-static int encode_uncompressed_block(BitStream* compressed_bit_stream, unsigned char* data_buffer, unsigned int data_buffer_len, unsigned char is_final) ;
-static int hf_compressed_block(BType method, BitStream* buffer, Match* distance_encoding, unsigned int distance_encoding_cnt, unsigned char is_final);
-static int compress_block(BitStream* compressed_bit_stream, unsigned char* data_buffer, unsigned int data_buffer_len, unsigned char is_final);
-
 /// NOTE: the stream will be always deallocated both in case of failure and success.
 /// 	  Furthermore, the function allocates the returned stream of bytes, so that
 /// 	  once it's on the hand of the caller, it's responsible to manage that memory.
+unsigned char* deflate_deflate(unsigned char* data_buffer, unsigned int data_buffer_len, unsigned int* compressed_data_len, int* zlib_err);	
 unsigned char* zlib_deflate(unsigned char* data_buffer, unsigned int data_buffer_len, unsigned int* compressed_data_len, int* zlib_err);	
+
+static void deallocate_hf_tree(HFTree* hf_tree);
 
 /* -------------------------------------------------------------------------------------------------------- */
 
-static void deallocate_hf_tree(HFTree* hf_tree) {
-	XCOMP_SAFE_FREE(hf_tree -> lengths);
-	XCOMP_SAFE_FREE(hf_tree -> table);
-	return;
-}
+static void encode_length_distance(zlib_buffer_t* buffer, Matches* distance_encoding, const unsigned int window_size) {
+	const unsigned short int length_base_values[29]   = {3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
+	const unsigned short int distance_base_values[30] = {1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
+	const unsigned int window_end = MIN(window_size, buffer -> size - buffer -> pos) + buffer -> pos;
+	const unsigned int buffer_start = buffer -> pos;
 
-static int length_distance_encoding(const unsigned char* data_stream, unsigned int data_stream_size, Match** distance_encoding, unsigned int* distance_encoding_cnt) {
-	*distance_encoding_cnt = MIN(data_stream_size, 3);
-	*distance_encoding = (Match*) xcomp_realloc(*distance_encoding, *distance_encoding_cnt * sizeof(Match));
-	if (*distance_encoding == NULL) {
-		WARNING_LOG("Failed to xcomp_reallocate buffer for distance_encoding.\n");
-		return -ZLIB_IO_ERROR;
-	}
-
-	for (unsigned char i = 0; i < *distance_encoding_cnt; ++i) (*distance_encoding)[i].literal = data_stream[i];
-	
-	unsigned short int cur_len = 0;
-	for (long int i = 3; i < data_stream_size; i += cur_len) {
-		unsigned short int found = 0;
-		cur_len = 3;
-		
-		for (int j = 0; (j < i - cur_len) && (i < data_stream_size - cur_len); ++j) {
-			if (mem_n_cmp((const char*) (data_stream + i), (const char*) (data_stream + j), cur_len) == 0) {
-				cur_len++;
-				found = i - j;
-				if (cur_len == 259) break;
-				continue;	
+	while (buffer -> pos < window_end) {
+		unsigned int distance = buffer -> pos - buffer_start;
+		unsigned int cur_distance = distance;
+		unsigned int length = 0;
+		unsigned char len_ind  = 0;
+		unsigned char dist_ind = 29;
+		while ((length < 259) && (length < distance) && (buffer -> pos + length < window_end)) {
+			int is_diff = mem_n_cmp((const char*) (buffer -> data + buffer -> pos - distance), (const char*) (buffer -> data + buffer -> pos), length + 1);
+			if (is_diff == 0) {
+				cur_distance = distance;
+				len_ind += (++length) > length_base_values[len_ind];
+				while (cur_distance < distance_base_values[dist_ind]) dist_ind--;
+				continue;
 			}
-		}
-
-		cur_len--;
-		
-		*distance_encoding = (Match*) xcomp_realloc(*distance_encoding, sizeof(Match) * (++(*distance_encoding_cnt)));
-		if (*distance_encoding == NULL) {
-			WARNING_LOG("Failed to xcomp_reallocate buffer for distance_encoding.\n");
-			return -ZLIB_IO_ERROR;
+			distance--;
 		}
 		
-		(*distance_encoding)[*distance_encoding_cnt - 1] = (Match) {0};
-	
-		if (cur_len > 2) {
-			const unsigned short int length_base_values[29] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
-			unsigned char len_ind = 0;
-			for (; len_ind < 29; ++len_ind) { 
-				if (cur_len < length_base_values[len_ind]) {
-					--len_ind;
-					break;
-				} else if (cur_len == length_base_values[len_ind]) break;
-			}
-
-			(*distance_encoding)[*distance_encoding_cnt - 1].length_diff = cur_len - length_base_values[len_ind];
-			(*distance_encoding)[*distance_encoding_cnt - 1].literal = 257 + len_ind;
-			
-			const unsigned short int dist_base_values[30] = {1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
-			unsigned char dist_ind = 0;
-			for (; dist_ind < 30; ++dist_ind) {
-				if (found < dist_base_values[dist_ind]) {
-					--dist_ind;
-					break;
-				} else if (found == dist_base_values[dist_ind]) break;
-			}
-			
-			dist_ind = MIN(dist_ind, 29);
-
-			(*distance_encoding)[*distance_encoding_cnt - 1].distance_diff = found - dist_base_values[dist_ind];
-			(*distance_encoding)[*distance_encoding_cnt - 1].distance = dist_ind;
-		} else {
-			(*distance_encoding)[*distance_encoding_cnt - 1].literal = data_stream[i];
-			cur_len = 1;
+		if (length < 3) {
+			// store the current byte as a literal if no backreference was found
+			(distance_encoding -> matches)[(distance_encoding -> cnt)++].literal = (buffer -> data)[buffer -> pos++];
+			continue;
 		}
+
+		// store length and distance if backreference was found
+		(distance_encoding -> matches)[distance_encoding -> cnt].length_diff   = length - length_base_values[len_ind];
+		(distance_encoding -> matches)[distance_encoding -> cnt].literal       = 257 + len_ind;
+		(distance_encoding -> matches)[distance_encoding -> cnt].distance_diff = cur_distance - distance_base_values[dist_ind];
+		(distance_encoding -> matches)[distance_encoding -> cnt].distance      = dist_ind;
+		(distance_encoding -> cnt)++;
+		buffer -> pos += length;
 	}
 	
 	// Append the block delimiter
-	*distance_encoding = (Match*) xcomp_realloc(*distance_encoding, sizeof(Match) * (++(*distance_encoding_cnt)));
-	if (*distance_encoding == NULL) {
+	(distance_encoding -> matches)[(distance_encoding -> cnt)++].literal = BLOCK_DELIMITER;
+	
+	return;
+}
+
+static int length_distance_encoding(zlib_buffer_t* buffer, Matches* distance_encoding, const unsigned int window_size, int* zlib_err) {
+	const unsigned int size = MIN(window_size, buffer -> size - buffer -> pos);
+	distance_encoding -> matches = xcomp_calloc(size + 1, sizeof(Match));
+	if (distance_encoding -> matches == NULL) {
 		WARNING_LOG("Failed to xcomp_reallocate buffer for distance_encoding.\n");
-		return -ZLIB_IO_ERROR;
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
+	}
+
+	distance_encoding -> cnt = 0;
+	encode_length_distance(buffer, distance_encoding, window_size);
+
+	distance_encoding -> matches = (Match*) xcomp_realloc(distance_encoding -> matches, sizeof(Match) * (distance_encoding -> cnt));
+	if (distance_encoding -> matches == NULL) {
+		WARNING_LOG("Failed to xcomp_reallocate buffer for distance_encoding.\n");
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
+	}
+
+	return ZLIB_NO_ERROR;
+}
+
+static int get_next_code(const unsigned int index, const HFTree hf_literals, const HFTree hf_distances) {
+	const unsigned int lengths_cnt = hf_literals.size + hf_distances.size;
+	if (index + 1 < hf_literals.size) return (hf_literals.lengths)[index + 1];
+	else if (index + 1 < lengths_cnt) return (hf_distances.lengths)[index + 1 - hf_literals.size];
+	return -1;
+}
+
+static void encode_rle(RLEStream* rle_encoded, const HFTree hf_literals, const HFTree hf_distances) {
+	rle_encoded -> cnt = 0;
+	
+	const unsigned int lengths_cnt = hf_literals.size + hf_distances.size;
+	int curr_code = get_next_code(-1, hf_literals, hf_distances);
+	unsigned char repeat_cnt = 1;
+
+	for (unsigned int i = 0; i <= lengths_cnt; ++i) {
+		int next_code = get_next_code(i, hf_literals, hf_distances);
+		while (next_code == curr_code && next_code != -1) {
+			repeat_cnt++;
+			i++;
+			next_code = get_next_code(i, hf_literals, hf_distances);
+		}
+
+		(rle_encoded -> repeat_cnts)[rle_encoded -> cnt] = repeat_cnt;
+		(rle_encoded -> values)[(rle_encoded -> cnt)++]  = curr_code; 
+		
+		repeat_cnt = 1; 
+		curr_code = next_code;
+		if (curr_code == -1) break;
+	}
+
+	return;
+}
+
+static int rle_encoding(RLEStream* rle_encoded, HFTree hf_literals, HFTree hf_distances, int* zlib_err) {
+	rle_encoded -> values      = (unsigned char*) xcomp_calloc(hf_literals.size + hf_distances.size, sizeof(unsigned char));
+	rle_encoded -> repeat_cnts = (unsigned char*) xcomp_calloc(hf_literals.size + hf_distances.size, sizeof(unsigned char));
+	if (rle_encoded -> values == NULL || rle_encoded -> repeat_cnts == NULL) {
+		XCOMP_MULTI_FREE(rle_encoded -> values, rle_encoded -> repeat_cnts);
+		WARNING_LOG("Failed to allocate buffer for rle_encoded.\n");
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
 	}
 	
-	(*distance_encoding)[*distance_encoding_cnt - 1] = (Match) {0};
-	(*distance_encoding)[*distance_encoding_cnt - 1].literal = BLOCK_DELIMITER;
+	encode_rle(rle_encoded, hf_literals, hf_distances);
+
+	rle_encoded -> values      = (unsigned char*) xcomp_realloc(rle_encoded -> values, (rle_encoded -> cnt) * sizeof(unsigned char));
+	rle_encoded -> repeat_cnts = (unsigned char*) xcomp_realloc(rle_encoded -> repeat_cnts, (rle_encoded -> cnt) * sizeof(unsigned char));
+	if (rle_encoded -> values == NULL || rle_encoded -> repeat_cnts == NULL) {
+		XCOMP_MULTI_FREE(rle_encoded -> values, rle_encoded -> repeat_cnts);
+		WARNING_LOG("Failed to xcomp_reallocate buffer for rle_encoded.\n");
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
+	}
 
 	return ZLIB_NO_ERROR;
 }
@@ -268,54 +286,31 @@ static void update_hf_nodes(HFNode new_node, HFNode* hf_nodes, unsigned int hf_n
 	return;
 }
 
-static int build_hf_table(HFTree* hf_tree) {
-	hf_tree -> table = (unsigned short int*) xcomp_calloc(hf_tree -> size, sizeof(unsigned short int));
-	if (hf_tree -> table == NULL) {
-		WARNING_LOG("Failed to allocate buffer for hf_tree.\n");
-		return -ZLIB_IO_ERROR;
-	}
-
+static void build_hf_tree(HFTree* hf_tree) {
 	unsigned int bl_cnts[16] = {0};	
 	for (unsigned short int i = 0; i < hf_tree -> size; ++i) bl_cnts[(hf_tree -> lengths)[i]]++;
 	bl_cnts[0] = 0;
 	
 	unsigned short int mins[16] = {0};
 	for (unsigned char i = 1; i < 16; ++i) mins[i] = (mins[i - 1] + bl_cnts[i - 1]) << 1;
-	for (unsigned short int i = 0; i < hf_tree -> size; ++i) if ((hf_tree -> lengths)[i]) (hf_tree -> table)[i] = mins[(hf_tree -> lengths)[i]]++;
+	for (unsigned short int i = 0; i < hf_tree -> size; ++i) if ((hf_tree -> lengths)[i]) (hf_tree -> values)[i] = mins[(hf_tree -> lengths)[i]]++;
 
-	return ZLIB_NO_ERROR;
+	return;
 }
 
-// Compute Huffman code lengths from a frequency table
-static int generate_hf_tree(unsigned short int* data_stream, unsigned int data_stream_size, HFTree* hf_tree) {
-	unsigned int frequencies[MAX_HF_SIZE] = {0};
-	for (unsigned int i = 0; i < data_stream_size; ++i) frequencies[data_stream[i]]++;
-
-	HFNode hf_nodes[MAX_HF_SIZE] = {0};  // Heap for building the tree
-	unsigned short int hf_nodes_cnt = 0;
-	for (unsigned short int i = 0; i < MAX_HF_SIZE; ++i) {
-		if (frequencies[i]) {
-			HFNode new_node = (HFNode) { .symbol = i, .freq = frequencies[i] };
-			update_hf_nodes(new_node, hf_nodes, ++hf_nodes_cnt);
-			hf_tree -> size = MAX(hf_tree -> size, i + 1);
-		}
-	}
-	
-	if (hf_tree -> size == 0) {
-		hf_tree -> table = (unsigned short int*) xcomp_calloc(MAX(hf_tree -> size, 1), sizeof(unsigned short int));
-		hf_tree -> lengths = (unsigned char*) xcomp_calloc(MAX(hf_tree -> size, 1), sizeof(unsigned char));
-		return ZLIB_NO_ERROR;
-	}
-
+static int compute_hf_codes(HFNode* hf_nodes, unsigned int hf_nodes_cnt, HFTree* hf_tree, int* zlib_err) {
     // Build Huffman tree (iterative method)
 	unsigned int parent_size = hf_tree -> size;
 	unsigned int* parent = (unsigned int*) xcomp_calloc(parent_size, sizeof(unsigned int));
 	if (parent == NULL) {
 		WARNING_LOG("Failed to allocate buffer for parent.\n");
-		return -ZLIB_IO_ERROR;
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
 	}
 
-    while (hf_nodes_cnt > 1) {
+	if (hf_nodes_cnt == 1) parent[hf_nodes -> symbol] = hf_nodes -> freq;
+    
+	while (hf_nodes_cnt > 1) {
         // Take two smallest nodes
         HFNode left = hf_nodes[0];
         HFNode right = hf_nodes[1];
@@ -329,7 +324,8 @@ static int generate_hf_tree(unsigned short int* data_stream, unsigned int data_s
 		parent = (unsigned int*) xcomp_realloc(parent, sizeof(unsigned int) * parent_size);
 		if (parent == NULL) {
 			WARNING_LOG("Failed to xcomp_reallocate buffer for parent.\n");
-			return -ZLIB_IO_ERROR;
+			*zlib_err = -ZLIB_IO_ERROR;
+			return *zlib_err;
 		}
 
 		parent[parent_size - 1] = 0;
@@ -342,12 +338,6 @@ static int generate_hf_tree(unsigned short int* data_stream, unsigned int data_s
     }
 
     // Assign bit-lengths from depths
-    hf_tree -> lengths = (unsigned char*) xcomp_calloc(hf_tree -> size, sizeof(unsigned char));
-	if (hf_tree -> lengths == NULL) {
-		WARNING_LOG("Failed to allocate buffer for hf_lengths.\n");
-		return -ZLIB_IO_ERROR;
-	}
-	
 	for (unsigned short int i = 0; i < hf_tree -> size; i++) {
         unsigned int node = i;
         while (parent[node]) {
@@ -357,359 +347,342 @@ static int generate_hf_tree(unsigned short int* data_stream, unsigned int data_s
     }
 
 	XCOMP_SAFE_FREE(parent);
-
-	int err = 0;
-	if ((err = build_hf_table(hf_tree)) < 0) {
-		XCOMP_SAFE_FREE(hf_tree -> lengths);
-		WARNING_LOG("An error occurred while building the hf table.\n");
-		return err;
-	}
-
 	return ZLIB_NO_ERROR;
 }
 
-static int rle_encoding(RLEStream** rle_encoded, unsigned short int* rle_encoded_size, HFTree hf_literals, HFTree hf_distances) {
-	*rle_encoded = (RLEStream*) xcomp_calloc(hf_literals.size + hf_distances.size, sizeof(RLEStream));
-	if (*rle_encoded == NULL) {
-		WARNING_LOG("Failed to allocate buffer for rle_encoded.\n");
-		return -ZLIB_IO_ERROR;
+// Compute Huffman code lengths from a frequency values
+static int generate_hf_tree(const unsigned int* freqs, HFTree* hf_tree, int* zlib_err) {
+	HFNode hf_nodes[MAX_HF_SIZE] = {0};  // Heap for building the tree
+	unsigned short int hf_nodes_cnt = 0;
+	for (unsigned short int i = 0; i < MAX_HF_SIZE; ++i) {
+		if (freqs[i]) {
+			HFNode new_node = (HFNode) { .symbol = i, .freq = freqs[i] };
+			update_hf_nodes(new_node, hf_nodes, ++hf_nodes_cnt);
+			hf_tree -> size = MAX(hf_tree -> size, i + 1);
+		}
+	}
+
+	hf_tree -> values = (unsigned short int*) xcomp_calloc(MAX(hf_tree -> size, 1), sizeof(unsigned short int));
+	hf_tree -> lengths = (unsigned char*) xcomp_calloc(MAX(hf_tree -> size, 1), sizeof(unsigned char));
+	if (hf_tree -> values == NULL || hf_tree -> lengths == NULL) {
+		deallocate_hf_tree(hf_tree);
+		WARNING_LOG("Failed to allocate buffer for hf_tree.\n");
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
 	}
 	
-	unsigned char previous_code = (hf_literals.lengths)[0];
-	*rle_encoded_size = 0;
-	(*rle_encoded)[(*rle_encoded_size)++].value = (hf_literals.lengths)[0];
+	if (hf_tree -> size == 0) return ZLIB_NO_ERROR;
 
-	unsigned char zero_cnt = 0;
-	unsigned char repeat_cnt = 0;
-	for (unsigned short int i = 1; i < hf_literals.size; ++i) {
-		if ((hf_literals.lengths)[i] == 0) {
-			for (zero_cnt = 1; zero_cnt < 138; ++i, ++zero_cnt) if (i + 1 >= hf_literals.size || (hf_literals.lengths)[i + 1] != 0) break;
-			if (zero_cnt < 138 && i == hf_literals.size) break;
-			else if (zero_cnt == 2) (*rle_encoded)[(*rle_encoded_size)++].value = (hf_literals.lengths)[i - 1];
-		} else if ((hf_literals.lengths)[i] == previous_code) {
-			for (repeat_cnt = 1; repeat_cnt < 6; ++i, ++repeat_cnt) if (i + 1 >= hf_literals.size || (hf_literals.lengths)[i + 1] != previous_code) break;
-			if (repeat_cnt < 6 && i == hf_literals.size) break;
-			else if (repeat_cnt == 2) (*rle_encoded)[(*rle_encoded_size)++].value = (hf_literals.lengths)[i - 1];
-		}
-		
-		if (repeat_cnt >= 3) (*rle_encoded)[*rle_encoded_size].repeat_cnt = repeat_cnt, (*rle_encoded)[*rle_encoded_size].value = 16; 
-		else if (zero_cnt >= 3) (*rle_encoded)[*rle_encoded_size].repeat_cnt = zero_cnt, (*rle_encoded)[*rle_encoded_size].value = 17 + (zero_cnt > 10), previous_code = 0;
-		else (*rle_encoded)[*rle_encoded_size].value = (hf_literals.lengths)[i], previous_code = (hf_literals.lengths)[i];
-		(*rle_encoded_size)++;
-		repeat_cnt = 0, zero_cnt = 0;
+	if (compute_hf_codes(hf_nodes, hf_nodes_cnt, hf_tree, zlib_err) < 0) {
+		WARNING_LOG("An error occurred while computing the hf codes.\n");
+		return *zlib_err;
 	}
 
-	if ((repeat_cnt || zero_cnt) && (previous_code != (hf_distances.lengths)[0])) {
-		if (repeat_cnt >= 3) (*rle_encoded)[*rle_encoded_size].repeat_cnt = repeat_cnt, (*rle_encoded)[(*rle_encoded_size)++].value = 16; 
-		else if (zero_cnt >= 3) (*rle_encoded)[*rle_encoded_size].repeat_cnt = zero_cnt, (*rle_encoded)[(*rle_encoded_size)++].value = 17 + (zero_cnt > 10), previous_code = 0;
-		else {
-			unsigned char limit = MAX(repeat_cnt, zero_cnt);
-			if (zero_cnt) previous_code = 0;
-			for (unsigned char i = 0; i < limit; ++i, ++(*rle_encoded_size)) (*rle_encoded)[*rle_encoded_size].repeat_cnt = 0, (*rle_encoded)[*rle_encoded_size].value = previous_code;
-		}
-	} else if ((repeat_cnt == 1 || zero_cnt == 1) && (previous_code == (hf_distances.lengths)[0] && previous_code != (hf_distances.lengths)[1])) {
-		if (zero_cnt) previous_code = 0;
-		(*rle_encoded)[*rle_encoded_size].repeat_cnt = 0, (*rle_encoded)[(*rle_encoded_size)++].value = previous_code;
-	}
-	
-	for (unsigned short int i = 0; i < hf_distances.size; ++i) {
-		if ((hf_distances.lengths)[i] == 0) {
-			for (zero_cnt = 1; zero_cnt < 138; ++i, ++zero_cnt) if (i + 1 >= hf_distances.size || (hf_distances.lengths)[i + 1] != 0) break;
-			if (zero_cnt < 138 && i == hf_distances.size) break;
-			else if (zero_cnt == 2) (*rle_encoded)[(*rle_encoded_size)++].value = (hf_distances.lengths)[i - 1];
-		} else if ((hf_distances.lengths)[i] == previous_code) {
-			for (repeat_cnt = 1; repeat_cnt < 6; ++i, ++repeat_cnt) if (i + 1 >= hf_distances.size || (hf_distances.lengths)[i + 1] != previous_code) break;
-			if (repeat_cnt < 6 && i == hf_distances.size) break;
-			else if (repeat_cnt == 2) (*rle_encoded)[(*rle_encoded_size)++].value = (hf_distances.lengths)[i - 1];
-		}
-		
-		if (repeat_cnt >= 3) (*rle_encoded)[*rle_encoded_size].repeat_cnt = repeat_cnt, (*rle_encoded)[*rle_encoded_size].value = 16; 
-		else if (zero_cnt >= 3) (*rle_encoded)[*rle_encoded_size].repeat_cnt = zero_cnt, (*rle_encoded)[*rle_encoded_size].value = 17 + (zero_cnt > 10), previous_code = 0;
-		else (*rle_encoded)[*rle_encoded_size].repeat_cnt = 0, (*rle_encoded)[*rle_encoded_size].value = (hf_distances.lengths)[i], previous_code = (hf_distances.lengths)[i];
-		(*rle_encoded_size)++;
-		repeat_cnt = 0, zero_cnt = 0;
-	}
-
-	if (repeat_cnt >= 3) (*rle_encoded)[*rle_encoded_size].repeat_cnt = repeat_cnt, (*rle_encoded)[(*rle_encoded_size)++].value = 16; 
-	else if (zero_cnt >= 3) (*rle_encoded)[*rle_encoded_size].repeat_cnt = zero_cnt, (*rle_encoded)[(*rle_encoded_size)++].value = 17 + (zero_cnt > 10), previous_code = 0;
-	else {
-		unsigned char limit = MAX(repeat_cnt, zero_cnt);
-		if (zero_cnt) previous_code = 0;
-		for (unsigned char i = 0; i < limit; ++i, ++(*rle_encoded_size)) (*rle_encoded)[*rle_encoded_size].repeat_cnt = 0, (*rle_encoded)[*rle_encoded_size].value = previous_code;
-	}
-
-	*rle_encoded = (RLEStream*) xcomp_realloc(*rle_encoded, (*rle_encoded_size) * sizeof(RLEStream));
-	if (*rle_encoded == NULL) {
-		WARNING_LOG("Failed to xcomp_reallocate buffer for rle_encoded.\n");
-		return -ZLIB_IO_ERROR;
-	}
+	build_hf_tree(hf_tree);
 
 	return ZLIB_NO_ERROR;
+
 }
 
-static int generate_hf_trees(Match* distance_encoded, unsigned int distance_encoded_size, BitStream* buffer, HFTree* hf_literals, HFTree* hf_distances) {
-	unsigned int distance_size = 0;
-	unsigned short int* literals_data = (unsigned short int*) xcomp_calloc(distance_encoded_size, sizeof(unsigned short int));
-	if (literals_data == NULL) {
-		WARNING_LOG("Failed to allocate buffer for literals_data.\n");
-		return -ZLIB_IO_ERROR;
+static int generate_hf_trees_from_matches(Matches* distance_encoded, HFTree* hf_literals, HFTree* hf_distances, int* zlib_err) {
+	unsigned int lit_freqs[MAX_HF_SIZE]  = {0};
+	unsigned int dist_freqs[MAX_HF_SIZE] = {0};
+	for (unsigned int i = 0; i < distance_encoded -> cnt; ++i) { 
+		const unsigned int lit  = (distance_encoded -> matches)[i].literal;
+		const unsigned int dist = (distance_encoded -> matches)[i].distance; 
+		if (lit > 256) dist_freqs[dist]++;
+		lit_freqs[lit]++;
 	}
 
-	unsigned short int* distance_data = (unsigned short int*) xcomp_calloc(distance_encoded_size, sizeof(unsigned short int));
-	if (distance_data == NULL) {
-		XCOMP_SAFE_FREE(literals_data);
-		WARNING_LOG("Failed to allocate buffer for distance_data.\n");
-		return -ZLIB_IO_ERROR;
+	if (generate_hf_tree(lit_freqs, hf_literals, zlib_err) < 0) {
+		WARNING_LOG("An error occurred while generating the hf_tree for the previous hf.\n");
+		return *zlib_err;
 	}
 
-	for (unsigned int i = 0; i < distance_encoded_size; ++i) {
-		literals_data[i] = distance_encoded[i].literal;
-		if (literals_data[i] > 256) distance_data[distance_size++] = distance_encoded[i].distance;
-	}
-
-	if (distance_size == 0) XCOMP_SAFE_FREE(distance_data);
-	else {
-		distance_data = (unsigned short int*) xcomp_realloc(distance_data, distance_size * sizeof(unsigned short int));
-		if (distance_data == NULL) {
-			XCOMP_SAFE_FREE(literals_data);
-			WARNING_LOG("Failed to xcomp_reallocate buffer for distance_data.\n");
-			return -ZLIB_IO_ERROR;
-		}
-	}
-
-	// Generate the tables
-	int err = 0;
-	if ((err = generate_hf_tree(literals_data, distance_encoded_size, hf_literals)) < 0) {
-		XCOMP_MULTI_FREE(literals_data, distance_data);
-		WARNING_LOG("An error occurred while generating the hf_tree for literals.\n");
-		return err;
-	}
-
-	if ((err = generate_hf_tree(distance_data, distance_size, hf_distances)) < 0) {
+	if (generate_hf_tree(dist_freqs, hf_distances, zlib_err) < 0) {
+		WARNING_LOG("An error occurred while generating the hf_tree for the previous hf.\n");
 		deallocate_hf_tree(hf_literals);
-		XCOMP_MULTI_FREE(literals_data, distance_data);
-		WARNING_LOG("An error occurred while generating the hf_tree for distances.\n");
-		return err;
+		return *zlib_err;
+	}
+
+	return ZLIB_NO_ERROR;
+}
+
+static int generate_hf_tree_from_rle(const RLEStream rle_encoded, HFTree* hf_tree, int* zlib_err) {
+	unsigned int freqs[MAX_HF_SIZE] = {0};
+	for (unsigned int i = 0; i < rle_encoded.cnt; ++i) { 
+		const unsigned char value = (rle_encoded.values)[i];
+		unsigned int repeat_cnt = (rle_encoded.repeat_cnts)[i];
+		repeat_cnt--, freqs[value]++;
+		
+		while (repeat_cnt >= 3) {
+			const unsigned char rep_value = 16 + (value == 0) + (value == 0 && repeat_cnt > 10);
+			freqs[rep_value]++;
+			if (value != 0) repeat_cnt -= MIN(repeat_cnt, 6);
+		    else            repeat_cnt -= MIN(repeat_cnt, 138);
+		}
+		
+		while (repeat_cnt--) freqs[value]++;
+	}
+
+	
+	if (generate_hf_tree(freqs, hf_tree, zlib_err) < 0) {
+		WARNING_LOG("An error occurred while generating the hf_tree for the previous hf.\n");
+		return *zlib_err;
 	}
 	
-	XCOMP_MULTI_FREE(literals_data, distance_data);
+	return ZLIB_NO_ERROR;
+}
+
+static int write_encoded_hf_trees(RLEStream rle_encoded, HFTree hf_tree, BitStream* bit_stream, int* zlib_err) {
+	for (unsigned short int i = 0; i < rle_encoded.cnt; ++i) {
+		const unsigned char value = (rle_encoded.values)[i];
+		unsigned int repeat_cnt   = (rle_encoded.repeat_cnts)[i];
+		bitstream_write_bits_reversed(bit_stream, (hf_tree.lengths)[value], hf_tree.values + value);
+		repeat_cnt--;
+
+		while (repeat_cnt >= 3) {
+			const unsigned char rep_value = 16 + (value == 0) + (value == 0 && repeat_cnt > 10);
+			bitstream_write_bits_reversed(bit_stream, (hf_tree.lengths)[rep_value], hf_tree.values + rep_value);
+			
+			unsigned char rep_cnt = 0;
+			if (value != 0) rep_cnt = MIN(repeat_cnt, 6);
+		    else            rep_cnt = MIN(repeat_cnt, 138);
+			repeat_cnt -= rep_cnt;
+
+			const unsigned char nbits = 2 + (rep_value == 17) + 5 * (rep_value == 18);
+			rep_cnt -= 3 + 8 * (rep_value == 18);
+			bitstream_write_bits(bit_stream, nbits, &rep_cnt);
+		}
+
+		while (repeat_cnt--) {
+			bitstream_write_bits_reversed(bit_stream, (hf_tree.lengths)[value], hf_tree.values + value);
+		}
+
+		if (bit_stream -> error) {
+			WARNING_LOG("An error occurred while generating the hf_tree for the previous hf.\n");
+			*zlib_err = bit_stream -> error;
+			return *zlib_err;
+		}
+	}
 	
-	RLEStream* rle_encoded = NULL;
-	unsigned short int rle_encoded_size = 0;
-	if ((err = rle_encoding(&rle_encoded, &rle_encoded_size, *hf_literals, *hf_distances)) < 0) {
-		DEALLOCATE_TREES(hf_literals, hf_distances);
+	return ZLIB_NO_ERROR;
+}
+
+static int generate_hf_trees(Matches* distance_encoded, BitStream* bit_stream, HFTree* hf_literals, HFTree* hf_distances, int* zlib_err) {
+	if (generate_hf_trees_from_matches(distance_encoded, hf_literals, hf_distances, zlib_err) < 0) {
+		WARNING_LOG("An error occurred while generating the hf_tree for the previous hf.\n");
+		return *zlib_err;
+	}
+
+	RLEStream rle_encoded = {0};
+	if (rle_encoding(&rle_encoded, *hf_literals, *hf_distances, zlib_err) < 0) {
+		deallocate_hf_tree(hf_literals);
+		deallocate_hf_tree(hf_distances);
 		WARNING_LOG("An error occurred while rle_encoding.\n");
-		return err;
+		return *zlib_err;
 	}
-
-	unsigned short int* rle_encoded_data = (unsigned short int*) xcomp_calloc(rle_encoded_size, sizeof(unsigned short int));
-	if (rle_encoded_data == NULL) {
-		DEALLOCATE_TREES(hf_literals, hf_distances);
-		XCOMP_SAFE_FREE(rle_encoded);
-		WARNING_LOG("Failed to allocate buffer for rle_encoded_data.\n");
-		return -ZLIB_IO_ERROR;
-	}
-
-	for (unsigned short int i = 0; i < rle_encoded_size; ++i) rle_encoded_data[i] = rle_encoded[i].value;
 
 	HFTree hf_tree = { .size = HF_TABLE_SIZE };
-	if ((err = generate_hf_tree(rle_encoded_data, rle_encoded_size, &hf_tree)) < 0) {
-		DEALLOCATE_TREES(hf_literals, hf_distances);
-		XCOMP_MULTI_FREE(rle_encoded, rle_encoded_data);
+	if (generate_hf_tree_from_rle(rle_encoded, &hf_tree, zlib_err) < 0) {
+		XCOMP_MULTI_FREE(rle_encoded.values, rle_encoded.repeat_cnts);
+		deallocate_hf_tree(hf_literals);
+		deallocate_hf_tree(hf_distances);
 		WARNING_LOG("An error occurred while generating the hf_tree for the previous hf.\n");
-		return err;
+		return *zlib_err;
 	}
 
-	XCOMP_SAFE_FREE(rle_encoded_data);
-
-	SAFE_BIT_WRITE(buffer, MAX(257, hf_literals -> size) - 257, 5, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
-	SAFE_BIT_WRITE(buffer, MAX(1, hf_distances -> size) - 1, 5, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
-
+	const unsigned char hlit = MAX(257, hf_literals -> size) - 257;
+	bitstream_write_bits(bit_stream, 5, &hlit);
+	const unsigned char hdist = MAX(1, hf_distances -> size) - 1;
+	bitstream_write_bits(bit_stream, 5, &hdist);
+	
 	const unsigned char order_of_code_lengths[] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
-	unsigned char order_size = 18;
-	for (; order_size > 3; --order_size) if ((hf_tree.lengths)[order_of_code_lengths[order_size]] > 0) break;
-	SAFE_BIT_WRITE(buffer, (order_size + 1) - 4, 4, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
+	unsigned char hclen = 18;
+	for (; hclen > 3; --hclen) if ((hf_tree.lengths)[order_of_code_lengths[hclen]] > 0) break;
+	hclen -= 3;
+	bitstream_write_bits(bit_stream, 4, &hclen);
 
-	for (unsigned char i = 0; i <= order_size; ++i) SAFE_BIT_WRITE(buffer, (hf_tree.lengths)[order_of_code_lengths[i]], 3, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
+	for (unsigned char i = 0; i <= 18; ++i) {
+		if ((hf_tree.lengths)[order_of_code_lengths[i]] == 0) break;
+		bitstream_write_bits(bit_stream, 3, hf_tree.lengths + order_of_code_lengths[i]);
+	}
 
-	for (unsigned short int i = 0; i < rle_encoded_size; ++i) {
-		unsigned char value = rle_encoded[i].value;
-		unsigned char repeat_cnt = rle_encoded[i].repeat_cnt;
-		SAFE_REV_BIT_WRITE(buffer, (hf_tree.table)[value], (hf_tree.lengths)[value], CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
-		if (repeat_cnt) {
-			if (value == 16) SAFE_BIT_WRITE(buffer, repeat_cnt - 3, 2, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
-			else if (value == 17) SAFE_BIT_WRITE(buffer, repeat_cnt - 3, 3,CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
-			else SAFE_BIT_WRITE(buffer, repeat_cnt - 11, 7, CREATE_CALLBACK(DEALLOCATE_TREES(&hf_tree, hf_literals, hf_distances); XCOMP_SAFE_FREE(rle_encoded)));
-		} 
+	if (write_encoded_hf_trees(rle_encoded, hf_tree, bit_stream, zlib_err) < 0) {
+		XCOMP_MULTI_FREE(rle_encoded.values, rle_encoded.repeat_cnts);
+		deallocate_hf_tree(&hf_tree);
+		deallocate_hf_tree(hf_literals);
+		deallocate_hf_tree(hf_distances);
+		WARNING_LOG("An error occurred while writing the RLE encoded hf trees.\n");
+		return *zlib_err;
 	}
 
 	deallocate_hf_tree(&hf_tree);
-	XCOMP_SAFE_FREE(rle_encoded);
+	XCOMP_MULTI_FREE(rle_encoded.values, rle_encoded.repeat_cnts);
 
 	return ZLIB_NO_ERROR;
 }
 
-static int hf_encode_block(HFTree hf_literals, HFTree hf_distances, Match* distance_encoding, unsigned int distance_encoding_cnt, BitStream* buffer) {
-    const unsigned char lenghts_extra_bits[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
+static void deallocate_hf_tree(HFTree* hf_tree) {
+	XCOMP_SAFE_FREE(hf_tree -> lengths);
+	XCOMP_SAFE_FREE(hf_tree -> values);
+	return;
+}
+
+static int hf_encode_block(HFTree hf_lit, HFTree hf_dist, Matches* distance_encoding, BitStream* bit_stream, int* zlib_err) {
+    const unsigned char lenghts_extra_bits[29]   = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
     const unsigned char distances_extra_bits[30] = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
 
-	for (unsigned int i = 0; i < distance_encoding_cnt; ++i) {
-		unsigned short int literal = distance_encoding[i].literal;
-		SAFE_REV_BIT_WRITE(buffer, (hf_literals.table)[literal], (hf_literals.lengths)[literal]);
-		if (literal > 256) {
-			unsigned char distance = distance_encoding[i].distance;
-			SAFE_BIT_WRITE(buffer, distance_encoding[i].length_diff, lenghts_extra_bits[literal - 257]);
-			SAFE_REV_BIT_WRITE(buffer, (hf_distances.table)[distance], (hf_distances.lengths)[distance]);
-			SAFE_BIT_WRITE(buffer, distance_encoding[i].distance_diff, distances_extra_bits[distance]);
+	if (hf_lit.lengths  == NULL) hf_lit.lengths  = (unsigned char*)      fhf_lit_lengths;
+	if (hf_lit.values   == NULL) hf_lit.values   = (unsigned short int*) fhf_lit_values;
+	if (hf_dist.lengths == NULL) hf_dist.lengths = (unsigned char*)      fhf_dist_lengths;
+	if (hf_dist.values  == NULL) hf_dist.values  = (unsigned short int*) fhf_dist_values;
+
+	for (unsigned int i = 0; i < distance_encoding -> cnt; ++i) {
+		unsigned short int literal = (distance_encoding -> matches)[i].literal;
+		bitstream_write_bits_reversed(bit_stream, (hf_lit.lengths)[literal], hf_lit.values + literal);
+		if (bit_stream -> error) break;
+		else if (literal > 256) {
+			unsigned char distance = (distance_encoding -> matches)[i].distance;
+			bitstream_write_bits(bit_stream, lenghts_extra_bits[literal - 257], &((distance_encoding -> matches)[i].length_diff));
+			bitstream_write_bits_reversed(bit_stream, (hf_dist.lengths)[distance], hf_dist.values + distance);
+			bitstream_write_bits(bit_stream, distances_extra_bits[distance], &((distance_encoding -> matches)[i].distance_diff));
+			if (bit_stream -> error) break;
 		}
+	}
+	
+	if (hf_lit.lengths != fhf_lit_lengths) {
+		deallocate_hf_tree(&hf_lit);
+		deallocate_hf_tree(&hf_dist);
+	}
+
+	XCOMP_SAFE_FREE(distance_encoding -> matches);
+
+	if (bit_stream -> error) {
+		*zlib_err = bit_stream -> error;
+		return *zlib_err;
 	}
 
 	return ZLIB_NO_ERROR;
 }
 
-static int encode_uncompressed_block(BitStream* compressed_bit_stream, unsigned char* data_buffer, unsigned int data_buffer_len, unsigned char is_final) {	
-	SAFE_BIT_WRITE(compressed_bit_stream, is_final, 3);
-	
-	unsigned short int buffer_len = data_buffer_len & 0xFFFF;
-	XCOMP_BE_CONVERT(&buffer_len, sizeof(unsigned short int));
-	
-	SAFE_BYTE_WRITE(compressed_bit_stream, sizeof(unsigned short int), 1, &buffer_len);
-	buffer_len = ~buffer_len;
-	SAFE_BYTE_WRITE(compressed_bit_stream, sizeof(unsigned short int), 1, &buffer_len);
-	
-	XCOMP_BE_CONVERT(data_buffer, data_buffer_len);
-	SAFE_BYTE_WRITE(compressed_bit_stream, sizeof(unsigned char), data_buffer_len, data_buffer);
-	
-	return ZLIB_NO_ERROR;
-}
-
-static int hf_compressed_block(BType method, BitStream* buffer, Match* distance_encoding, unsigned int distance_encoding_cnt, unsigned char is_final) {
-	int err = 0;
-
-	// Calculate the Huffman Tree/Table
-	SAFE_NEXT_BIT_WRITE(buffer, is_final, distance_encoding);         		
-	SAFE_BIT_WRITE(buffer, method, 2, XCOMP_SAFE_FREE(distance_encoding));			
-
-	HFTree hf_literals = {0};
-	HFTree hf_distances = {0};
-	if (method == COMPRESSED_DYNAMIC_HF) {
-		if ((err = generate_hf_trees(distance_encoding, distance_encoding_cnt, buffer, &hf_literals, &hf_distances)) < 0) {
-			WARNING_LOG("An error occurred while generating hf_tables.\n");
-			return err;
-		}
-	} else {
-		FIXED_LITERALS_TREE(hf_literals);
-		FIXED_DISTANCE_TREE(hf_distances);
-	}
-
-	// Huffman encode the block, encapsulating it into a DEFLATE block (append block header, encoded data plus the encoded '256' to signal the end of the block)
-	if ((err = hf_encode_block(hf_literals, hf_distances, distance_encoding, distance_encoding_cnt, buffer)) < 0) {
-		if (!hf_literals.is_fixed)  DEALLOCATE_TREES(&hf_literals, &hf_distances);
-		WARNING_LOG("An error occurred while encoding the block.\n");
-		return err;
-	} 
-
-	if (!hf_literals.is_fixed) DEALLOCATE_TREES(&hf_literals, &hf_distances);
-
-	return ZLIB_NO_ERROR;
-}
-
-static int compress_block(BitStream* compressed_bit_stream, unsigned char* data_buffer, unsigned int data_buffer_len, unsigned char is_final) {
-	int err = 0;
-	Match* distance_encoding = NULL;
-	unsigned int distance_encoding_cnt = 0;
-	if ((err = length_distance_encoding(data_buffer, data_buffer_len, &distance_encoding, &distance_encoding_cnt)) < 0) {
+static int hf_compress_block(const zlib_block_t* block, BitStream* compressed_bitstream, zlib_buffer_t* buffer, const unsigned int window_size, int* zlib_err) {
+	Matches distance_encoding = {0};
+	if (length_distance_encoding(buffer, &distance_encoding, window_size, zlib_err) < 0) {
 		WARNING_LOG("An error occurred while performing the length-distance encoding.\n");
-		return err; 
-	}
-	
-	// Static compression
-	BitStream fixed_block_bit_stream = CREATE_BIT_STREAM(NULL, 0);
-	if ((err = hf_compressed_block(COMPRESSED_FIXED_HF, &fixed_block_bit_stream, distance_encoding, distance_encoding_cnt, is_final)) < 0) {
-		XCOMP_SAFE_FREE(distance_encoding);
-		WARNING_LOG("An error occurred while compressing the block using FIXED_HF.\n");
-		return err;
-	}
-	
-	// Dynamic compression
-	BitStream dynamic_block_bit_stream = CREATE_BIT_STREAM(NULL, 0);
-	if ((err = hf_compressed_block(COMPRESSED_DYNAMIC_HF, &dynamic_block_bit_stream, distance_encoding, distance_encoding_cnt, is_final)) < 0) {
-		XCOMP_SAFE_FREE(distance_encoding);
-		deallocate_bit_stream(&fixed_block_bit_stream);
-		WARNING_LOG("An error occurred while compressing the block using DYNAMIC_HF.\n");
-		return err;
+		return *zlib_err; 
 	}
 
-	XCOMP_SAFE_FREE(distance_encoding);
-	
-	// Fallback no compression
-	if (fixed_block_bit_stream.size > data_buffer_len + 5 && dynamic_block_bit_stream.size > data_buffer_len + 5) {
-		deallocate_bit_stream(&fixed_block_bit_stream);
-		deallocate_bit_stream(&dynamic_block_bit_stream);
-		printf("compression_method: '%s', decompressed_size: %u\n", btypes_str[NO_COMPRESSION], data_buffer_len);
-		if ((err = encode_uncompressed_block(compressed_bit_stream, data_buffer, data_buffer_len, is_final)) < 0) {
-			WARNING_LOG("An error occurred while encoding the uncompressed block.\n");
-			return err;
+	HFTree hf_lit = {0};
+	HFTree hf_dist = {0};
+	if (block -> compression_method == COMPRESSED_DYNAMIC_HF) {
+		if (generate_hf_trees(&distance_encoding, compressed_bitstream, &hf_lit, &hf_dist, zlib_err) < 0) {
+			WARNING_LOG("An error occurred while generating hf_tables.\n");
+			return *zlib_err;
 		}
-		return ZLIB_NO_ERROR;
 	}
-
-	unsigned char is_fixed_better = fixed_block_bit_stream.size <= dynamic_block_bit_stream.size;
-	printf("compression_method: '%s', decompressed_size: %u\n", btypes_str[is_fixed_better ? COMPRESSED_FIXED_HF : COMPRESSED_DYNAMIC_HF], data_buffer_len);
-	BitStream block_bit_stream = is_fixed_better ? fixed_block_bit_stream : dynamic_block_bit_stream;
-	if (is_fixed_better) deallocate_bit_stream(&dynamic_block_bit_stream);
-	else deallocate_bit_stream(&fixed_block_bit_stream);
 	
-	bitstream_bit_copy(compressed_bit_stream, &block_bit_stream);
-	if (compressed_bit_stream -> error) {
-		if (!is_fixed_better) deallocate_bit_stream(&dynamic_block_bit_stream);
-		else deallocate_bit_stream(&fixed_block_bit_stream);
-		WARNING_LOG("Failed to bit copy the block bitstream into the compressed bitstream.\n");
-		return -ZLIB_IO_ERROR;
-	}
+	// Huffman encode the block, encapsulating it into a DEFLATE block (append
+	// block header, encoded data plus the encoded '256' to signal the end of
+	// the block)
+	if (hf_encode_block(hf_lit, hf_dist, &distance_encoding, compressed_bitstream, zlib_err) < 0) {
+		WARNING_LOG("An error occurred while encoding the block.\n");
+		return *zlib_err;
+	} 
+	
+	return *zlib_err;
+}
 
-	// Deallocate the one the bit_stream actually used
-	if (!is_fixed_better) deallocate_bit_stream(&dynamic_block_bit_stream);
-	else deallocate_bit_stream(&fixed_block_bit_stream);
+static int encode_uncompressed_block(BitStream* compressed_bitstream, zlib_buffer_t* buffer, const unsigned int window_size, int* zlib_err) {	
+	const unsigned short int buffer_len = MIN(buffer -> size - buffer -> pos, window_size);
+	bitstream_write_bytes(compressed_bitstream, sizeof(unsigned short int), 1, &buffer_len);
+	if (compressed_bitstream -> error) { 
+		*zlib_err = -(compressed_bitstream -> error);
+		return *zlib_err;
+	}
+	
+	const unsigned short int buffer_clen = ~buffer_len;
+	bitstream_write_bytes(compressed_bitstream, sizeof(unsigned short int), 1, &buffer_clen);
+	if (compressed_bitstream -> error) { 
+		*zlib_err = -(compressed_bitstream -> error);
+		return *zlib_err;
+	}
+	
+	bitstream_write_bytes(compressed_bitstream, sizeof(unsigned char), buffer_len, buffer -> data + buffer -> pos);
+	if (compressed_bitstream -> error) { 
+		*zlib_err = -(compressed_bitstream -> error);
+		return *zlib_err;
+	}
+	
+	buffer -> pos += buffer_len;
 
 	return ZLIB_NO_ERROR;
 }
 
-// TODO: Rename the following to deflate_deflate and create the zlib_deflate function following RFC 1950
-unsigned char* zlib_deflate(unsigned char* data_buffer, unsigned int data_buffer_len, unsigned int* compressed_data_len, int* zlib_err) {
-	*compressed_data_len = 0;
-	BitStream compressed_bit_stream = CREATE_BIT_STREAM(NULL, 0);
-	*zlib_err = -ZLIB_NO_ERROR;
-	
-	// Fragment the data in block of WINDOW_SIZE
-	unsigned int buffer_offset = 0;
-#ifdef _DEBUG
-	unsigned int block_cnt = 0;
-#endif //_DEBUG
-	while (data_buffer_len >= WINDOW_SIZE) {
-		DEBUG_LOG("Block %u: is_final: %u, ", ++block_cnt, data_buffer_len == WINDOW_SIZE);
-		if ((*zlib_err = compress_block(&compressed_bit_stream, data_buffer + buffer_offset, WINDOW_SIZE, data_buffer_len == WINDOW_SIZE)) < 0) {
-			XCOMP_SAFE_FREE(data_buffer);
-			deallocate_bit_stream(&compressed_bit_stream);
-			return ((unsigned char*) "An error occurred while compressing the block.\n");
-		}
-		data_buffer_len -= WINDOW_SIZE;
-		buffer_offset += WINDOW_SIZE;
+static int write_block_header(BitStream* bit_stream, const zlib_block_t* block, int* zlib_err) {
+	bitstream_write_bits(bit_stream, 3, block); 
+	if (bit_stream -> error) { 
+		*zlib_err = -(bit_stream -> error);
+		return *zlib_err;
 	}
+	return 0;
+}
+
+static int compress_block(BitStream* compressed_bitstream, zlib_buffer_t* buffer, const unsigned int window_size, int* zlib_err) {
+	const BType compression_method =  COMPRESSED_DYNAMIC_HF; //COMPRESSED_FIXED_HF; // NO_COMPRESSION; 
+	// const BType compression_method = choose_compression_method(buffer, window_size, zlib_err);
+	const zlib_block_t block = { .is_final = (buffer -> size - buffer -> pos) <= window_size, .compression_method = compression_method };
+	if (write_block_header(compressed_bitstream, &block, zlib_err) < 0) return *zlib_err;
 	
-	if (data_buffer_len > 0) {
-		DEBUG_LOG("Block %u: is_final: 1, ", ++block_cnt);
-		if ((*zlib_err = compress_block(&compressed_bit_stream, data_buffer + buffer_offset, data_buffer_len, TRUE)) < 0) {
-			XCOMP_SAFE_FREE(data_buffer);
-			deallocate_bit_stream(&compressed_bit_stream);
-			return ((unsigned char*) "An error occurred while compressing the block.\n");
+	if (block.compression_method == NO_COMPRESSION) {
+	    if (encode_uncompressed_block(compressed_bitstream, buffer, window_size, zlib_err) < 0) {
+			WARNING_LOG("An error occurred while encoding the uncompressed block.\n");
 		}
+		return *zlib_err;
 	}
 
-	XCOMP_SAFE_FREE(data_buffer);
+	if (hf_compress_block(&block, compressed_bitstream, buffer, window_size, zlib_err) < 0) {
+		WARNING_LOG("An error occurred while compressing the block with huffman coding.\n");
+		return *zlib_err;
+	}
+
+	return ZLIB_NO_ERROR;
+}
+
+static int zlib_raw_deflate(BitStream* compressed_bitstream, zlib_buffer_t* buffer, const unsigned int window_size, int* zlib_err) {
+	// Fragment the data in block of WINDOW_SIZE
+	unsigned int block_cnt = 0;
+	while (buffer -> size > buffer -> pos) {
+		const unsigned char is_final = (buffer -> size - buffer -> pos) <= window_size;
+		
+		DEBUG_LOG("Block %u: is_final: %u", ++block_cnt, is_final);
+		if (compress_block(compressed_bitstream, buffer, window_size, zlib_err) < 0) {
+			XCOMP_SAFE_FREE(buffer -> data);
+			deallocate_bit_stream(compressed_bitstream);
+			WARNING_LOG("An error occurred while compressing the block.");
+			return *zlib_err;
+		}
+	}
 	
-	*compressed_data_len = compressed_bit_stream.size;
+	XCOMP_SAFE_FREE(buffer -> data);
+	return 0;
+}
+
+/* -------------------------------------------------------------------------------------------------------- */
+unsigned char* deflate_deflate(unsigned char* data, unsigned int data_len, unsigned int* compressed_data_len, int* zlib_err) {
+	BitStream compressed_bit_stream = CREATE_BIT_STREAM(NULL, 0);
+	zlib_buffer_t buffer = { .data = data, .size = data_len, .pos = 0 }; 
+	if (zlib_raw_deflate(&compressed_bit_stream, &buffer, WINDOW_SIZE, zlib_err) < 0) return NULL;
+    *compressed_data_len = compressed_bit_stream.size;
 	return compressed_bit_stream.stream;
+}
+
+unsigned char* zlib_deflate(unsigned char* data, unsigned int data_len, unsigned int* compressed_data_len, int* zlib_err) {
+	(void) data;
+	(void) data_len;
+	(void) compressed_data_len;
+	*zlib_err = -ZLIB_TODO;
+	return NULL;
 }
 
 #endif

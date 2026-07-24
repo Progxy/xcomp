@@ -34,13 +34,22 @@ typedef enum {
 	BITSTREAM_REALLOC_ERROR
 } BitStreamError;
 
-typedef struct PACKED_STRUCT BitStream {
+typedef struct {
 	unsigned char* stream;
 	unsigned int size;
 	unsigned int byte_pos;
 	unsigned char bit_pos;
 	unsigned char error;
 } BitStream;
+
+/// TODO: Future version of BitStream
+/* typedef struct { */
+/* 	void* stream; */
+/* 	u64 size; */
+/* 	u64 byte_pos; */
+/* 	u8 bit_pos; */
+/* 	BitStreamError error; */
+/* } bit_stream_t; */
 
 /* ---------------------------------------------------------------------------------------------------------- */
 static void print_bit_stream_info(const char* name, const char* file, const int line, BitStream* bit_stream) {
@@ -131,10 +140,13 @@ static void bitstream_resize(BitStream* bit_stream, long long int size) {
 		return;
 	}
 
+	const unsigned int offset = bit_stream -> byte_pos + (bit_stream -> bit_pos > 0);
+	mem_set(bit_stream -> stream + offset, 0, bit_stream -> size - offset);
+
 	return;
 }
 
-static void bitstream_write_byte(BitStream* bit_stream, unsigned char val) {
+UNUSED_FUNCTION static void bitstream_write_byte(BitStream* bit_stream, unsigned char val) {
    	bit_stream -> byte_pos += (bit_stream -> bit_pos > 0 && bit_stream -> bit_pos < 7);	
 	if (bit_stream -> byte_pos >= bit_stream -> size) bitstream_resize(bit_stream, bit_stream -> byte_pos - bit_stream -> size + 1);
 	if (bit_stream -> error) return;
@@ -165,12 +177,11 @@ static void bitstream_write_bit(BitStream* bit_stream, const unsigned char bit_v
 	if ((bit_stream -> byte_pos == bit_stream -> size) || (bit_stream -> bit_pos > 7)) {
 		bitstream_resize(bit_stream, 1);
 		(bit_stream -> byte_pos) += (bit_stream -> bit_pos > 7);
+		bit_stream -> bit_pos = 0;
 	} 
 	
 	if (bit_stream -> error) return;
-	
-	(bit_stream -> stream)[bit_stream -> byte_pos] = bit_val << (bit_stream -> bit_pos);
-	(bit_stream -> bit_pos)++;
+	(bit_stream -> stream)[bit_stream -> byte_pos] |= (bit_val & 1) << (bit_stream -> bit_pos++);
 
 	return;
 }
@@ -179,6 +190,17 @@ static void bitstream_write_bits(BitStream* bit_stream, const unsigned int n_bit
     for (unsigned int i = 0, j = 0; i < n_bits; ++i) {
     	j += (i % 8 == 0) && (i != 0); 
 		const unsigned char bit_val = (XCOMP_CAST_PTR(data, unsigned char)[j] >> (i % 8)) & 1;
+		bitstream_write_bit(bit_stream, bit_val);
+		if (bit_stream -> error) return;
+	}
+	return;
+}
+
+static void bitstream_write_bits_reversed(BitStream* bit_stream, const unsigned int n_bits, const void* data) {
+	unsigned int z = (n_bits - (n_bits % 8)) / 8 + ((n_bits % 8) != 0) - 1;
+    for (long int i = n_bits - 1, j = 0; i >= 0; --i, ++j) {
+    	z -= (j % 8 == 0) && (j != 0); 
+		const unsigned char bit_val = (XCOMP_CAST_PTR(data, unsigned char)[z] >> (i % 8)) & 1;
 		bitstream_write_bit(bit_stream, bit_val);
 		if (bit_stream -> error) return;
 	}
@@ -199,12 +221,15 @@ UNUSED_FUNCTION static void skip_to_next_byte(BitStream* bit_stream) {
 	return;
 }
 
+UNUSED_FUNCTION static void bitstream_bit_copy(BitStream* dest_bitstream, const BitStream* src_bitstream) {
+	if (dest_bitstream -> error || src_bitstream -> error) return;
+	const unsigned long long int bits_cnt = src_bitstream -> byte_pos * 8 + src_bitstream -> bit_pos;
+	bitstream_write_bits(dest_bitstream, bits_cnt, src_bitstream -> stream);
+	return;
+}
+
 UNUSED_FUNCTION static void deallocate_bit_stream(BitStream* bit_stream) {
 	XCOMP_SAFE_FREE(bit_stream -> stream);
-	bit_stream -> stream   = NULL;
-	bit_stream -> byte_pos = 0;
-	bit_stream -> bit_pos  = 0;
-	bit_stream -> size     = 0;
 	return;
 }
 

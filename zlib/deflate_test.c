@@ -35,7 +35,7 @@ int main(void) {
 	unsigned char* zlib_deflate_test = (unsigned char*) xcomp_calloc(sizeof(zlib_data), sizeof(unsigned char));
 	mem_cpy(zlib_deflate_test, zlib_data, sizeof(zlib_data));
 	
-	unsigned char* zlib_compressed_data = zlib_deflate((unsigned char*) zlib_deflate_test, sizeof(zlib_data), &zlib_compressed_data_length, &err);
+	unsigned char* zlib_compressed_data = deflate_deflate((unsigned char*) zlib_deflate_test, sizeof(zlib_data), &zlib_compressed_data_length, &err);
 	if (err) {
 		printf(COLOR_STR("ZLIB_ERROR::%s: ", RED) "%s", zlib_errors_str[-err], zlib_compressed_data);
 		return -1;
@@ -44,7 +44,7 @@ int main(void) {
 	printf("ZLIB compressed from %lu -> %u bytes.\n", sizeof(zlib_data), zlib_compressed_data_length);
 
 	unsigned int zlib_decompressed_data_length = 0;
-	unsigned char* zlib_decompressed_data = zlib_inflate(zlib_compressed_data, zlib_compressed_data_length, &zlib_decompressed_data_length, &err);
+	unsigned char* zlib_decompressed_data = deflate_inflate(zlib_compressed_data, zlib_compressed_data_length, &zlib_decompressed_data_length, &err);
 	if (err) {
 		printf(COLOR_STR("ZLIB_ERROR::%s: ", RED) "%s", zlib_errors_str[-err], zlib_decompressed_data);
 		return -1;

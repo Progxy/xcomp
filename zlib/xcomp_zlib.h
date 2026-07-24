@@ -78,9 +78,50 @@ static const char* btypes_str[] = {
 	"RESERVED" 
 };
 
+/* -------------------------------------------------------------------------------------------------------- */
+// ---------
+//  Structs 
+// ---------
+typedef struct {
+	unsigned char* data;
+	unsigned int size;
+	unsigned int pos;
+} zlib_buffer_t; 
+
+typedef struct PACKED_STRUCT {
+	unsigned char is_final:   1;
+	BType compression_method: 2;
+	unsigned char padding:    5;
+} zlib_block_t;
+
+typedef struct {
+	unsigned short int hlit;
+	unsigned short int hdist;
+	unsigned short int hclen;
+} dhf_header_t;
+
+typedef struct {
+	unsigned char compression_method;
+    unsigned int  window_size;
+    unsigned char preset_dictionary;
+    unsigned char compression_level;
+} zlib_header_t;
+
+/* -------------------------------------------------------------------------------------------------------- */
 #ifdef _XCOMP_BITSTREAM_
 #	include "./zlib_bitstream.h"
 #endif //_XCOMP_BITSTREAM_
+
+static inline unsigned int __adler_crc(const unsigned char* data, const unsigned int size, unsigned int adler_reg) {
+    const unsigned int prime = 65521;
+	unsigned int low  = adler_reg & 0xFFFF;
+	unsigned int high = (adler_reg >> 16) & 0xFFFF;
+	for (unsigned int i = 0; i < size; ++i) {
+		low  = (low + data[i]) % prime;
+		high = (low + high) % prime;
+	}
+	return ((high << 16) | low);
+}
 
 #include "./zlib_compress.h"
 #include "./zlib_decompress.h"

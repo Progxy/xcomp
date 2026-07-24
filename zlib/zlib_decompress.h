@@ -23,16 +23,6 @@
  *            zlib    <https://www.ietf.org/rfc/rfc1950.txt> *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-// -------------------
-//  Macros Definition
-// -------------------
-#define DEALLOCATE_TABLES(hf_a, hf_b)	\
-	do {      							\
-		deallocate_hf_table(hf_a);      \
-		deallocate_hf_table(hf_b);      \
-	} while (FALSE)      		
-
-/* ---------------------------------------------------------------------------------------------------------- */
 // ---------
 //  Structs
 // ---------
@@ -42,31 +32,6 @@ typedef struct {
     unsigned short int* max_codes;
     unsigned char max_bit_length;
 } dhf_table_t;
-
-typedef struct PACKED_STRUCT {
-	unsigned char is_final:           1;
-	unsigned char compression_method: 2;
-	unsigned char padding:            5;
-} zlib_block_t;
-
-typedef struct {
-	unsigned char* data;
-	unsigned int size;
-	unsigned int pos;
-} zlib_buffer_t; 
-
-typedef struct {
-	unsigned short int hlit;
-	unsigned short int hdist;
-	unsigned short int hclen;
-} dhf_header_t;
-
-typedef struct {
-	unsigned char compression_method;
-    unsigned int  window_size;
-    unsigned char preset_dictionary;
-    unsigned char compression_level;
-} zlib_header_t;
 
 /* ---------------------------------------------------------------------------------------------------------- */
 // ------------------------
@@ -109,7 +74,7 @@ static inline int max_value(unsigned char* arr, unsigned int size) {
 
 /// Generate huffman table (values, min_codes, max_codes) starting from given lengths
 /// Should also be responsible for the eventual deallocation of the hf table
-static int generate_hf(dhf_table_t* hf, unsigned char* lengths, unsigned int size) {
+static int generate_hf(dhf_table_t* hf, unsigned char* lengths, unsigned int size, int* zlib_err) {
 	unsigned char bl_count[16] = {0};
 	for (unsigned short int i = 0; i < size; ++i) (bl_count[lengths[i]])++;
     
@@ -119,14 +84,16 @@ static int generate_hf(dhf_table_t* hf, unsigned char* lengths, unsigned int siz
 	hf -> max_codes = xcomp_calloc(hf -> max_bit_length + 1, sizeof(unsigned short int));
     if ((hf -> min_codes == NULL) || (hf -> max_codes == NULL) || (hf -> values == NULL)) {
 		WARNING_LOG("Failed to allocate buffers.");
-		return -ZLIB_IO_ERROR;
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
 	}
 	
 	for (unsigned int i = 1; i <= hf -> max_bit_length; ++i) {
         (hf -> values)[i] = (unsigned short int*) xcomp_calloc(bl_count[i], sizeof(unsigned short int));
 		if ((hf -> values)[i] == NULL) {
 			WARNING_LOG("Failed to allocate buffer for hf -> values[%u].", i);
-			return -ZLIB_IO_ERROR;
+			*zlib_err = -ZLIB_IO_ERROR;
+			return *zlib_err;
 		}
 	}
 
@@ -137,14 +104,11 @@ static int generate_hf(dhf_table_t* hf, unsigned char* lengths, unsigned int siz
         (hf -> max_codes)[bits] = (hf -> min_codes)[bits];
     }
 	
-	// Compute the code for each entry, and update the max_code each time accordingly.
-	// In this way we sort of allocate a code for each entry in order (as
-	// lexicographical order is required), as we already know the base for each
-	// bit_length (min_code).
 	unsigned char* values_index = xcomp_calloc(hf -> max_bit_length + 1, sizeof(unsigned char));
     if (values_index == NULL) {
 		WARNING_LOG("Failed to allocate buffer for values_index.");
-		return -ZLIB_IO_ERROR;
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
 	}
 	
 	for (unsigned int i = 0; i < size; ++i) {
@@ -156,10 +120,7 @@ static int generate_hf(dhf_table_t* hf, unsigned char* lengths, unsigned int siz
     }
 
     XCOMP_SAFE_FREE(values_index);
-
-	/* print_hf_table(hf, bl_count); */
-
-    return ZLIB_NO_ERROR;
+	return *zlib_err;
 }
 
 static inline int decode_fixed_dist(BitStream* bit_stream, int* err) {
@@ -226,11 +187,13 @@ static inline int decode_dhf(BitStream* bit_stream, unsigned short int code, dhf
     return *err;
 }
 
-static int decode_dhf_lengths(BitStream* bit_stream, dhf_table_t decoder_hf, unsigned char* lengths, unsigned int size) {
-	int err = 0;
+static int decode_dhf_lengths(BitStream* bit_stream, dhf_table_t decoder_hf, unsigned char* lengths, unsigned int size, int* zlib_err) {
+	const unsigned char bit_sizes[] = { 2, 3, 7 };
+	const unsigned char cnt_base[]  = { 3, 3, 11 };
+	
     unsigned int i = 0; 
 	while (i < size) {
-        int value = decode_dhf(bit_stream, bitstream_read_next_bit(bit_stream), decoder_hf, &err);
+        int value = decode_dhf(bit_stream, bitstream_read_next_bit(bit_stream), decoder_hf, zlib_err);
 		if (value < 0 || value > 18) {
 			WARNING_LOG("Corrupted encoded lengths.");
 			break;
@@ -242,13 +205,11 @@ static int decode_dhf_lengths(BitStream* bit_stream, dhf_table_t decoder_hf, uns
 			continue;
         } 
 		
-		const unsigned char bit_sizes[] = { 2, 3, 7 };
-		const unsigned char cnt_base[]  = { 3, 3, 11 };
 		unsigned char count = 0;
 		bitstream_read_bits(bit_stream, bit_sizes[value - 16], &count);
 		count += cnt_base[value - 16];
 		if (bit_stream -> error) {
-			err = -ZLIB_IO_ERROR;
+			*zlib_err = -ZLIB_IO_ERROR;
 			break;
 		}
 
@@ -259,21 +220,24 @@ static int decode_dhf_lengths(BitStream* bit_stream, dhf_table_t decoder_hf, uns
 		for (unsigned int idx = 0; idx < count; ++i, ++idx) lengths[i] = copy_value;
 	}
 	
-	if (err < 0) {
+	if (*zlib_err < 0) {
 		deallocate_hf_table(&decoder_hf);
 		XCOMP_SAFE_FREE(lengths);
 	}
 
-    return err;
+    return *zlib_err;
 }
 
 // Parse the dynamic huffman table header 
-static int parse_decoder_hf(BitStream* bit_stream, dhf_table_t* decoder_hf, dhf_header_t* dhf_header) {
+static int parse_decoder_hf(BitStream* bit_stream, dhf_table_t* decoder_hf, dhf_header_t* dhf_header, int* zlib_err) {
 	bitstream_read_bits(bit_stream, 5, &(dhf_header -> hlit));
 	bitstream_read_bits(bit_stream, 5, &(dhf_header -> hdist));
 	bitstream_read_bits(bit_stream, 4, &(dhf_header -> hclen));
-    if (bit_stream -> error) return -ZLIB_IO_ERROR;
-	
+    if (bit_stream -> error) {
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
+	}
+
 	dhf_header -> hlit  += 257;
 	dhf_header -> hdist += 1;
 	dhf_header -> hclen += 4;
@@ -283,7 +247,8 @@ static int parse_decoder_hf(BitStream* bit_stream, dhf_table_t* decoder_hf, dhf_
     unsigned char* lengths = xcomp_calloc(HF_TABLE_SIZE, sizeof(unsigned char));
 	if (lengths == NULL) {
 		WARNING_LOG("Failed to allocate buffer for decoder_hf lengths.");
-		return -ZLIB_IO_ERROR;
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
 	}
 
 	// Retrieve the length of each code, using the array to match the fixed
@@ -292,29 +257,27 @@ static int parse_decoder_hf(BitStream* bit_stream, dhf_table_t* decoder_hf, dhf_
 		bitstream_read_bits(bit_stream, 3, lengths + order_of_code_lengths[i]);
 		if (bit_stream -> error) {
 			XCOMP_SAFE_FREE(lengths);
-			return -ZLIB_IO_ERROR;
+			*zlib_err = -ZLIB_IO_ERROR;
+			return *zlib_err;
 		}
 	}
     
-	int err = 0;
-    if ((err = generate_hf(decoder_hf, lengths, HF_TABLE_SIZE)) < 0) {
+    if (generate_hf(decoder_hf, lengths, HF_TABLE_SIZE, zlib_err) < 0) {
 		WARNING_LOG("An error occurred while generating the codes for the decoder_hf table.");
-		return err;
+		return *zlib_err;
 	}
 	
 	XCOMP_SAFE_FREE(lengths);
-
-	return ZLIB_NO_ERROR;
+	return *zlib_err;
 }
 
 /// Decode the Literal and Distance Dynamic Huffman Tables
-static int decode_dhf_tables(BitStream* bit_stream, dhf_table_t* literals_hf, dhf_table_t* distance_hf) {
-    int err = 0;
+static int decode_dhf_tables(BitStream* bit_stream, dhf_table_t* literals_hf, dhf_table_t* distance_hf, int* zlib_err) {
 	dhf_header_t dhf_header = {0};
 	dhf_table_t decoder_hf = {0}; 
-    if ((err = parse_decoder_hf(bit_stream, &decoder_hf, &dhf_header)) < 0) {
+    if (parse_decoder_hf(bit_stream, &decoder_hf, &dhf_header, zlib_err) < 0) {
 		WARNING_LOG("An error occurred while generating the codes for the decoder_hf table.");
-		return err;
+		return *zlib_err;
 	}
 	
     unsigned char* hf_lengths   = (unsigned char*) xcomp_calloc(dhf_header.hlit + dhf_header.hdist, sizeof(unsigned char));
@@ -324,14 +287,15 @@ static int decode_dhf_tables(BitStream* bit_stream, dhf_table_t* literals_hf, dh
 		deallocate_hf_table(&decoder_hf);
 		XCOMP_MULTI_FREE(hf_lengths, lit_lengths, dist_lengths);
 		WARNING_LOG("Failed to allocate buffer for distance_hf -> lengths.");
-		return -ZLIB_IO_ERROR;
+		*zlib_err = -ZLIB_IO_ERROR;
+		return *zlib_err;
 	}
 
 	// Decode the bit_lengths for both the Huffman Trees
-	if ((err = decode_dhf_lengths(bit_stream, decoder_hf, hf_lengths, dhf_header.hlit + dhf_header.hdist)) < 0) {
+	if (decode_dhf_lengths(bit_stream, decoder_hf, hf_lengths, dhf_header.hlit + dhf_header.hdist, zlib_err) < 0) {
 		XCOMP_MULTI_FREE(lit_lengths, dist_lengths);
 		WARNING_LOG("An error occurred while decoding the literals lengths.");
-		return err;
+		return *zlib_err;
 	}
 
 	mem_cpy(lit_lengths, hf_lengths, dhf_header.hlit);
@@ -339,17 +303,17 @@ static int decode_dhf_tables(BitStream* bit_stream, dhf_table_t* literals_hf, dh
 	deallocate_hf_table(&decoder_hf);
 	XCOMP_SAFE_FREE(hf_lengths);
 
-	err = generate_hf(literals_hf, lit_lengths, HF_LITERALS_SIZE);
-	if (err == 0) err = generate_hf(distance_hf, dist_lengths, HF_DISTANCE_SIZE);
-
-	if (err < 0) {
+	generate_hf(literals_hf, lit_lengths, HF_LITERALS_SIZE, zlib_err);
+	if (*zlib_err == 0) generate_hf(distance_hf, dist_lengths, HF_DISTANCE_SIZE, zlib_err);
+	if (*zlib_err < 0) {
 		WARNING_LOG("An error occurred while generating literal and distance dhfs.");
-		DEALLOCATE_TABLES(literals_hf, distance_hf);
+		deallocate_hf_table(literals_hf);
+		deallocate_hf_table(distance_hf);
 	}
 	
 	XCOMP_MULTI_FREE(lit_lengths, dist_lengths);
 
-    return err;
+    return *zlib_err;
 }
 
 /// Move backwards distance bytes in the output stream, and copy length bytes from this position to the output stream
@@ -398,7 +362,7 @@ static int decode_compressed_block(BType compression_method, BitStream* bit_stre
 	dhf_table_t literals_hf = {0};
 	dhf_table_t distance_hf = {0};
 	if (compression_method == COMPRESSED_DYNAMIC_HF) {
-		if ((*zlib_err = decode_dhf_tables(bit_stream, &literals_hf, &distance_hf)) < 0) {
+		if (decode_dhf_tables(bit_stream, &literals_hf, &distance_hf, zlib_err) < 0) {
 			WARNING_LOG("An error occurred during dynamic HF table decoding.");
 			return *zlib_err;
 		}
@@ -429,8 +393,11 @@ static int decode_compressed_block(BType compression_method, BitStream* bit_stre
 	}
 	
 	if (bit_stream -> error) *zlib_err = -ZLIB_IO_ERROR;	
-	if (compression_method == COMPRESSED_DYNAMIC_HF) DEALLOCATE_TABLES(&literals_hf, &distance_hf);
-	
+	if (compression_method == COMPRESSED_DYNAMIC_HF) {
+		deallocate_hf_table(&literals_hf);
+		deallocate_hf_table(&distance_hf);
+	}
+
 	return *zlib_err;
 }
 
@@ -546,18 +513,6 @@ unsigned char* deflate_inflate(unsigned char* stream, unsigned int size, unsigne
 	unsigned char* decompressed_data = zlib_raw_inflate(&bit_stream, WINDOW_SIZE, decompressed_data_length, zlib_err);
     XCOMP_SAFE_FREE(stream);
 	return decompressed_data;
-}
-
-// -------------------------------------------------------------------------------------------
-static inline unsigned int __adler_crc(const unsigned char* data, const unsigned int size, unsigned int adler_reg) {
-    const unsigned int prime = 65521;
-	unsigned int low  = adler_reg & 0xFFFF;
-	unsigned int high = (adler_reg >> 16) & 0xFFFF;
-	for (unsigned int i = 0; i < size; ++i) {
-		low  = (low + data[i]) % prime;
-		high = (low + high) % prime;
-	}
-	return ((high << 16) | low);
 }
 
 static int read_zlib_header(BitStream* bit_stream, zlib_header_t* zlib_header) {
