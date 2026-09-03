@@ -552,13 +552,13 @@ unsigned char* zlib_inflate(unsigned char* stream, unsigned int size, unsigned i
 	*zlib_err = read_zlib_header(&bit_stream, &zlib_header);
     if (*zlib_err) {
     	XCOMP_SAFE_FREE(stream);
-		return ((unsigned char*) "Invalid ZLIB Header");
+		return NULL;
 	}
 
 	unsigned char* decompressed_data = zlib_raw_inflate(&bit_stream, zlib_header.window_size, decompressed_data_length, zlib_err);
 	if (*zlib_err) {
     	XCOMP_SAFE_FREE(stream);
-		return ((unsigned char*) "Failed to decompress data");
+		return NULL;
 	}
 
     // Read the ADLER-CRC
@@ -571,9 +571,10 @@ unsigned char* zlib_inflate(unsigned char* stream, unsigned int size, unsigned i
 	unsigned int adler_register = __adler_crc(decompressed_data, *decompressed_data_length, 1);
     if (adler_crc != adler_register) {
         *zlib_err = -ZLIB_INVALID_ADLER_CHECKSUM;
-        XCOMP_SAFE_FREE(decompressed_data);
         DEBUG_LOG("adler_register: 0x%X, adler_crc: 0x%X", adler_register, adler_crc);
-        return ((unsigned char*) "corrupted compressed data blocks");
+        DEBUG_LOG("decomp: %s\n", decompressed_data);
+        XCOMP_SAFE_FREE(decompressed_data);
+		return NULL;
     }
 
 	*zlib_err = ZLIB_NO_ERROR;

@@ -4,12 +4,12 @@ DEFINITIONS = -D_DEBUG
 test: zlib_tester
 	./zlib_automated_test.sh
 
-inflate_test: inflate_test.c xcomp_zlib.h 
+inflate_test: inflate_test.c xcomp_zlib.h zlib_compress.h zlib_decompress.h
 	gcc $(FLAGS) $(DEFINITIONS) $< -o $@
 
-deflate_test: deflate_test.c xcomp_zlib.h 
+deflate_test: deflate_test.c xcomp_zlib.h zlib_compress.h zlib_decompress.h
 	gcc $(FLAGS) $(DEFINITIONS) $< -o $@
 
-zlib_tester: zlib_tester.c xcomp_zlib.h 	
+zlib_tester: zlib_tester.c xcomp_zlib.h zlib_compress.h zlib_decompress.h
 	gcc $(FLAGS) $(DEFINITIONS) $< -o $@
 

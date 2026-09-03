@@ -144,7 +144,7 @@ typedef struct {
 /// 	  Furthermore, the function allocates the returned stream of bytes, so that
 /// 	  once it's on the hand of the caller, it's responsible to manage that memory.
 unsigned char* deflate_deflate(unsigned char* data_buffer, unsigned int data_buffer_len, unsigned int* compressed_data_len, int* zlib_err);	
-unsigned char* zlib_deflate(unsigned char* data_buffer, unsigned int data_buffer_len, unsigned int* compressed_data_len, int* zlib_err);	
+unsigned char* zlib_deflate(unsigned char* data, unsigned int data_len, unsigned int* compressed_data_len, zlib_header_t* zlib_header, int* zlib_err);
 
 static void deallocate_hf_tree(HFTree* hf_tree);
 
@@ -499,12 +499,11 @@ static int generate_hf_trees(Matches* distance_encoded, BitStream* bit_stream, H
 	
 	const unsigned char order_of_code_lengths[] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
 	unsigned char hclen = 18;
-	for (; hclen > 3; --hclen) if ((hf_tree.lengths)[order_of_code_lengths[hclen]] > 0) break;
+	for (; hclen > 4; --hclen) if ((hf_tree.lengths)[order_of_code_lengths[hclen]] > 0) break;
 	hclen -= 3;
 	bitstream_write_bits(bit_stream, 4, &hclen);
 
-	for (unsigned char i = 0; i <= 18; ++i) {
-		if ((hf_tree.lengths)[order_of_code_lengths[i]] == 0) break;
+	for (unsigned char i = 0; i < hclen + 4; ++i) {
 		bitstream_write_bits(bit_stream, 3, hf_tree.lengths + order_of_code_lengths[i]);
 	}
 
@@ -665,24 +664,84 @@ static int zlib_raw_deflate(BitStream* compressed_bitstream, zlib_buffer_t* buff
 	}
 	
 	XCOMP_SAFE_FREE(buffer -> data);
+	
 	return 0;
+}
+
+static int write_zlib_header(BitStream* compressed_bitstream, zlib_header_t* zlib_header) {
+	if (zlib_header -> compression_method != 8) return -ZLIB_INVALID_COMPRESSION_METHOD;
+	else if (zlib_header -> window_size > 7)    return -ZLIB_INVALID_WINDOW_SIZE;
+	else if (zlib_header -> preset_dictionary)  return -ZLIB_DICTIONARY_NOT_SUPPORTED;
+	
+	DEBUG_LOG("-- ZLIB HEADER --");
+	DEBUG_LOG("compression method: %u", zlib_header -> compression_method);
+	DEBUG_LOG("window size:        %u", zlib_header -> window_size);
+	DEBUG_LOG("preset dictionary:  %u", zlib_header -> preset_dictionary);
+	DEBUG_LOG("compression level:  %u", zlib_header -> compression_level);
+	DEBUG_LOG("-----------------");
+
+	unsigned char compress_data = zlib_header -> compression_method & 0x0F;
+    compress_data |= (zlib_header -> window_size & 0x0F) << 4;
+    unsigned char flags = (zlib_header -> preset_dictionary & 0x01) << 5;
+    flags |= (zlib_header -> compression_level & 0x03) << 6;
+
+	if ((compress_data * 256 + flags) % 31 != 0) {
+		flags += 31 - ((compress_data * 256 + flags) % 31);
+		if ((compress_data * 256 + flags) % 31 != 0) return -ZLIB_INVALID_CHECKSUM;
+	}
+
+	bitstream_write_byte(compressed_bitstream, compress_data);
+	if (compressed_bitstream -> error) {
+		deallocate_bit_stream(compressed_bitstream);
+		return -ZLIB_IO_ERROR;
+	}
+
+	bitstream_write_byte(compressed_bitstream, flags);
+	if (compressed_bitstream -> error) {
+		deallocate_bit_stream(compressed_bitstream);
+		return -ZLIB_IO_ERROR;
+	}
+
+    return 0;
 }
 
 /* -------------------------------------------------------------------------------------------------------- */
 unsigned char* deflate_deflate(unsigned char* data, unsigned int data_len, unsigned int* compressed_data_len, int* zlib_err) {
-	BitStream compressed_bit_stream = CREATE_BIT_STREAM(NULL, 0);
+	BitStream compressed_bitstream = CREATE_BIT_STREAM(NULL, 0);
 	zlib_buffer_t buffer = { .data = data, .size = data_len, .pos = 0 }; 
-	if (zlib_raw_deflate(&compressed_bit_stream, &buffer, WINDOW_SIZE, zlib_err) < 0) return NULL;
-    *compressed_data_len = compressed_bit_stream.size;
-	return compressed_bit_stream.stream;
+	if (zlib_raw_deflate(&compressed_bitstream, &buffer, WINDOW_SIZE, zlib_err) < 0) return NULL;
+    *compressed_data_len = compressed_bitstream.size;
+	return compressed_bitstream.stream;
 }
 
-unsigned char* zlib_deflate(unsigned char* data, unsigned int data_len, unsigned int* compressed_data_len, int* zlib_err) {
-	(void) data;
-	(void) data_len;
-	(void) compressed_data_len;
-	*zlib_err = -ZLIB_TODO;
-	return NULL;
+unsigned char* zlib_deflate(unsigned char* data, const unsigned int data_len, unsigned int* compressed_data_len, zlib_header_t* zlib_header, int* zlib_err) {
+	BitStream compressed_bitstream = CREATE_BIT_STREAM(NULL, 0);
+	zlib_header_t default_zlib_header = { .compression_method = 8, .window_size = 7, .preset_dictionary = 0, .compression_level = 1 };
+	if (zlib_header == NULL) zlib_header = &default_zlib_header;
+
+	*zlib_err = write_zlib_header(&compressed_bitstream, zlib_header);
+    if (*zlib_err < 0) {
+		XCOMP_SAFE_FREE(data);
+		return NULL;
+	}
+
+	// Calculate the ADLER-CRC of the blocks
+	unsigned int adler_crc = __adler_crc(data, data_len, 1);
+	XCOMP_BE_CONVERT(&adler_crc, sizeof(unsigned int));
+	
+	const unsigned int window_size = 1 << (zlib_header -> window_size + 8);
+	zlib_buffer_t buffer = { .data = data, .size = data_len, .pos = 0 }; 
+	if (zlib_raw_deflate(&compressed_bitstream, &buffer, window_size, zlib_err) < 0) return NULL;
+	
+	bitstream_write_bytes(&compressed_bitstream, sizeof(unsigned int), 1, &adler_crc);
+	if (compressed_bitstream.error) { 
+		*zlib_err = -(compressed_bitstream.error);
+		deallocate_bit_stream(&compressed_bitstream);
+		return NULL;
+	}
+	
+    *compressed_data_len = compressed_bitstream.size;
+	return compressed_bitstream.stream;
 }
 
 #endif

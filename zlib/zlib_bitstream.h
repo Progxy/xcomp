@@ -44,7 +44,7 @@ typedef struct {
 
 /// TODO: Future version of BitStream
 /* typedef struct { */
-/* 	void* stream; */
+/* 	u8* stream; */
 /* 	u64 size; */
 /* 	u64 byte_pos; */
 /* 	u8 bit_pos; */
@@ -148,7 +148,7 @@ static void bitstream_resize(BitStream* bit_stream, long long int size) {
 
 UNUSED_FUNCTION static void bitstream_write_byte(BitStream* bit_stream, unsigned char val) {
    	bit_stream -> byte_pos += (bit_stream -> bit_pos > 0 && bit_stream -> bit_pos < 7);	
-	if (bit_stream -> byte_pos >= bit_stream -> size) bitstream_resize(bit_stream, bit_stream -> byte_pos - bit_stream -> size + 1);
+	if (bit_stream -> byte_pos >= bit_stream -> size) bitstream_resize(bit_stream, 1);
 	if (bit_stream -> error) return;
 
 	bit_stream -> bit_pos = 0;
@@ -161,7 +161,7 @@ static void bitstream_write_bytes(BitStream* bit_stream, const unsigned int size
 	const unsigned int tot_size = size * nmemb;
 	bit_stream -> byte_pos += (bit_stream -> bit_pos > 0 && bit_stream -> bit_pos < 7);	
 	if (bit_stream -> byte_pos + tot_size >= bit_stream -> size) {
-		bitstream_resize(bit_stream, bit_stream -> byte_pos + tot_size - bit_stream -> size + 1);
+		bitstream_resize(bit_stream, tot_size);
 	}
 	
 	if (bit_stream -> error) return;
