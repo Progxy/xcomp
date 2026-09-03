@@ -22,8 +22,6 @@
  * Resources: deflate <https://www.ietf.org/rfc/rfc1951.txt> *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-// TODO: Possibly create hf_tree struct to contain all the length - size
-//       couples, generally reduce the size of functions' declaration
 // TODO: Write better comments and error messages
 
 /* -------------------------------------------------------------------------------------------------------- */
@@ -385,7 +383,6 @@ static int generate_hf_tree(const unsigned int* freqs, HFTree* hf_tree, int* zli
 	build_hf_tree(hf_tree);
 
 	return ZLIB_NO_ERROR;
-
 }
 
 static int generate_hf_trees_from_matches(Matches* distance_encoded, HFTree* hf_literals, HFTree* hf_distances, int* zlib_err) {
@@ -680,9 +677,11 @@ static int write_zlib_header(BitStream* compressed_bitstream, zlib_header_t* zli
 	else if (zlib_header -> window_size > 7)    return -ZLIB_INVALID_WINDOW_SIZE;
 	else if (zlib_header -> preset_dictionary)  return -ZLIB_DICTIONARY_NOT_SUPPORTED;
 	
+	const unsigned int window_size = 1 << (zlib_header -> window_size + 8);
+	
 	DEBUG_LOG("-- ZLIB HEADER --");
 	DEBUG_LOG("compression method: %u", zlib_header -> compression_method);
-	DEBUG_LOG("window size:        %u", zlib_header -> window_size);
+	DEBUG_LOG("window size:        %u", window_size);
 	DEBUG_LOG("preset dictionary:  %u", zlib_header -> preset_dictionary);
 	DEBUG_LOG("compression level:  %u", zlib_header -> compression_level);
 	DEBUG_LOG("-----------------");
