@@ -98,24 +98,11 @@ static const unsigned char fhf_lit_lengths[] = {
 // ---------
 //  Structs
 // ---------
-// TODO: Use the following
-/* typedef struct { */
-/* 	unsigned short int* literal; */
-/* 	unsigned char*      distance; */
-/* 	unsigned char*      length_diff; */
-/* 	unsigned short int* distance_diff; */
-/* 	unsigned int cnt; */
-/* } Match; */
-
 typedef struct {
-	unsigned short int literal;
-	unsigned char      distance;
-	unsigned char      length_diff;
-	unsigned short int distance_diff;
-} Match;
-
-typedef struct {
-	Match* matches;
+	unsigned short int* literal;
+	unsigned char*      distance;
+	unsigned char*      length_diff;
+	unsigned short int* distance_diff;
 	unsigned int cnt;
 } Matches;
 
@@ -175,29 +162,38 @@ static void encode_length_distance(zlib_buffer_t* buffer, Matches* distance_enco
 		
 		if (length < 3) {
 			// store the current byte as a literal if no backreference was found
-			(distance_encoding -> matches)[(distance_encoding -> cnt)++].literal = (buffer -> data)[buffer -> pos++];
+			(distance_encoding -> literal)[(distance_encoding -> cnt)++] = (buffer -> data)[buffer -> pos++];
 			continue;
 		}
 
 		// store length and distance if backreference was found
-		(distance_encoding -> matches)[distance_encoding -> cnt].length_diff   = length - length_base_values[len_ind];
-		(distance_encoding -> matches)[distance_encoding -> cnt].literal       = 257 + len_ind;
-		(distance_encoding -> matches)[distance_encoding -> cnt].distance_diff = cur_distance - distance_base_values[dist_ind];
-		(distance_encoding -> matches)[distance_encoding -> cnt].distance      = dist_ind;
+		(distance_encoding -> length_diff)[distance_encoding -> cnt]   = length - length_base_values[len_ind];
+		(distance_encoding -> literal)[distance_encoding -> cnt]       = 257 + len_ind;
+		(distance_encoding -> distance_diff)[distance_encoding -> cnt] = cur_distance - distance_base_values[dist_ind];
+		(distance_encoding -> distance)[distance_encoding -> cnt]      = dist_ind;
 		(distance_encoding -> cnt)++;
 		buffer -> pos += length;
 	}
 	
 	// Append the block delimiter
-	(distance_encoding -> matches)[(distance_encoding -> cnt)++].literal = BLOCK_DELIMITER;
+	(distance_encoding -> literal)[(distance_encoding -> cnt)++] = BLOCK_DELIMITER;
 	
 	return;
 }
 
 static int length_distance_encoding(zlib_buffer_t* buffer, Matches* distance_encoding, const unsigned int window_size, int* zlib_err) {
 	const unsigned int size = MIN(window_size, buffer -> size - buffer -> pos);
-	distance_encoding -> matches = xcomp_calloc(size + 1, sizeof(Match));
-	if (distance_encoding -> matches == NULL) {
+	distance_encoding -> literal       = xcomp_calloc(size + 1, sizeof(unsigned short int));
+	distance_encoding -> distance      = xcomp_calloc(size + 1, sizeof(unsigned char));
+	distance_encoding -> length_diff   = xcomp_calloc(size + 1, sizeof(unsigned char));
+	distance_encoding -> distance_diff = xcomp_calloc(size + 1, sizeof(unsigned short int));
+	
+	if (distance_encoding -> literal       == NULL || distance_encoding -> distance      == NULL ||
+		distance_encoding -> length_diff   == NULL || distance_encoding -> distance_diff == NULL) {
+		XCOMP_SAFE_FREE(distance_encoding -> literal);
+		XCOMP_SAFE_FREE(distance_encoding -> distance);
+		XCOMP_SAFE_FREE(distance_encoding -> length_diff);
+		XCOMP_SAFE_FREE(distance_encoding -> distance_diff);
 		WARNING_LOG("Failed to xcomp_reallocate buffer for distance_encoding.\n");
 		*zlib_err = -ZLIB_IO_ERROR;
 		return *zlib_err;
@@ -206,8 +202,16 @@ static int length_distance_encoding(zlib_buffer_t* buffer, Matches* distance_enc
 	distance_encoding -> cnt = 0;
 	encode_length_distance(buffer, distance_encoding, window_size);
 
-	distance_encoding -> matches = (Match*) xcomp_realloc(distance_encoding -> matches, sizeof(Match) * (distance_encoding -> cnt));
-	if (distance_encoding -> matches == NULL) {
+	distance_encoding -> literal       = xcomp_realloc(distance_encoding -> literal, (distance_encoding -> cnt) * sizeof(unsigned short int));
+	distance_encoding -> distance      = xcomp_realloc(distance_encoding -> distance, (distance_encoding -> cnt) * sizeof(unsigned char));
+	distance_encoding -> length_diff   = xcomp_realloc(distance_encoding -> length_diff, (distance_encoding -> cnt) * sizeof(unsigned char));
+	distance_encoding -> distance_diff = xcomp_realloc(distance_encoding -> distance_diff, (distance_encoding -> cnt) * sizeof(unsigned short int));
+	if (distance_encoding -> literal       == NULL || distance_encoding -> distance      == NULL ||
+		distance_encoding -> length_diff   == NULL || distance_encoding -> distance_diff == NULL) {
+		XCOMP_SAFE_FREE(distance_encoding -> literal);
+		XCOMP_SAFE_FREE(distance_encoding -> distance);
+		XCOMP_SAFE_FREE(distance_encoding -> length_diff);
+		XCOMP_SAFE_FREE(distance_encoding -> distance_diff);
 		WARNING_LOG("Failed to xcomp_reallocate buffer for distance_encoding.\n");
 		*zlib_err = -ZLIB_IO_ERROR;
 		return *zlib_err;
@@ -388,8 +392,8 @@ static int generate_hf_trees_from_matches(Matches* distance_encoded, HFTree* hf_
 	unsigned int lit_freqs[MAX_HF_SIZE]  = {0};
 	unsigned int dist_freqs[MAX_HF_SIZE] = {0};
 	for (unsigned int i = 0; i < distance_encoded -> cnt; ++i) { 
-		const unsigned int lit  = (distance_encoded -> matches)[i].literal;
-		const unsigned int dist = (distance_encoded -> matches)[i].distance; 
+		const unsigned int lit  = (distance_encoded -> literal)[i];
+		const unsigned int dist = (distance_encoded -> distance)[i]; 
 		if (lit > 256) dist_freqs[dist]++;
 		lit_freqs[lit]++;
 	}
@@ -538,14 +542,14 @@ static int hf_encode_block(HFTree hf_lit, HFTree hf_dist, Matches* distance_enco
 	if (hf_dist.values  == NULL) hf_dist.values  = (unsigned short int*) fhf_dist_values;
 
 	for (unsigned int i = 0; i < distance_encoding -> cnt; ++i) {
-		unsigned short int literal = (distance_encoding -> matches)[i].literal;
+		unsigned short int literal = (distance_encoding -> literal)[i];
 		bitstream_write_bits_reversed(bit_stream, (hf_lit.lengths)[literal], hf_lit.values + literal);
 		if (bit_stream -> error) break;
 		else if (literal > 256) {
-			unsigned char distance = (distance_encoding -> matches)[i].distance;
-			bitstream_write_bits(bit_stream, lenghts_extra_bits[literal - 257], &((distance_encoding -> matches)[i].length_diff));
+			unsigned char distance = (distance_encoding -> distance)[i];
+			bitstream_write_bits(bit_stream, lenghts_extra_bits[literal - 257], &((distance_encoding -> length_diff)[i]));
 			bitstream_write_bits_reversed(bit_stream, (hf_dist.lengths)[distance], hf_dist.values + distance);
-			bitstream_write_bits(bit_stream, distances_extra_bits[distance], &((distance_encoding -> matches)[i].distance_diff));
+			bitstream_write_bits(bit_stream, distances_extra_bits[distance], &((distance_encoding -> distance_diff)[i]));
 			if (bit_stream -> error) break;
 		}
 	}
@@ -555,7 +559,10 @@ static int hf_encode_block(HFTree hf_lit, HFTree hf_dist, Matches* distance_enco
 		deallocate_hf_tree(&hf_dist);
 	}
 
-	XCOMP_SAFE_FREE(distance_encoding -> matches);
+	XCOMP_SAFE_FREE(distance_encoding -> literal);
+	XCOMP_SAFE_FREE(distance_encoding -> distance);
+	XCOMP_SAFE_FREE(distance_encoding -> length_diff);
+	XCOMP_SAFE_FREE(distance_encoding -> distance_diff);
 
 	if (bit_stream -> error) {
 		*zlib_err = bit_stream -> error;
